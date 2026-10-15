@@ -2,6 +2,21 @@ import { store, money } from './store.js';
 import { compressImage, usage } from './img.js';
 import * as backend from './backend.js';
 
+/* 噜噜形象。
+   face 是正脸方图，裁成圆形当头像；另三张是横幅场景，
+   宽高比 16:9，当空状态插图正好（缩成小方块会看不清在干嘛）。 */
+const LULU = {
+  face:    'assets/lulu-app-icon.webp',
+  waiting: 'assets/lulu-waiting.webp',
+  cooking: 'assets/lulu-cooking.webp',
+  ride:    'assets/lulu-delivering.webp',
+};
+
+/** 头部的小圆头像 */
+function mascot(src = LULU.face, cls = '') {
+  return `<img class="mascot ${cls}" src="${src}" alt="" aria-hidden="true">`;
+}
+
 /* 云端拉下来的数据到了就重画；同步状态变了只改那一个小圆点，不整页重画
    ——整页重画会把正在输入的框冲掉，打字打到一半焦点就没了。 */
 store.onChange(render);
@@ -175,10 +190,10 @@ function renderShops() {
 
   const banner = `
     <div class="banner">
-      <img src="assets/lulu-delivering.webp" alt="" class="banner-img">
+      <img src="${LULU.ride}" alt="" class="banner-img">
       <div class="banner-txt">
         <strong>今天想吃点什么？</strong>
-        <span>${shops.length ? `已经收录 ${shops.length} 家店` : '还没有店，去「管理」里录一家'}</span>
+        <span>${shops.length ? `已经收录 ${shops.length} 家店，翻翻看` : '还没有店，去「管理」里录一家'}</span>
       </div>
     </div>`;
 
@@ -211,7 +226,7 @@ function renderShops() {
             }).join('')}
           </div>
         </section>`).join('')
-    : emptyState('还没有收录店铺', '去「管理」里录一家你最爱的外卖', '/manage', '去录店', 'assets/lulu-waiting.webp');
+    : emptyState('还没有收录店铺', '去「管理」里录一家你最爱的外卖', '/manage', '去录店', LULU.cooking);
 
   return `
     ${pending && pending.items.length ? pendingStrip(pending) : ''}
@@ -234,7 +249,7 @@ function pendingStrip(order) {
 
 function renderShop([id]) {
   const shop = store.shop(id);
-  if (!shop) return emptyState('这家店不见了', '可能已经被删掉了', '/', '回到首页', null);
+  if (!shop) return emptyState('这家店不见了', '可能已经被删掉了', '/', '回到首页', LULU.waiting);
 
   const dishes = store.dishes(id);
   const reviews = store.reviewsOf(id);
@@ -261,8 +276,9 @@ function renderShop([id]) {
     </section>`).join('');
 
   return `
-    <div class="page-head" style="background:var(--yellow)">
+    <div class="page-head">
       <button class="back" data-go="/">‹</button>
+      ${mascot()}
       <div style="flex:1">
         <div class="shop-title">${esc(shop.name)}</div>
         <div class="shop-sub">${esc(shop.platform)} · ${dishes.length} 道菜${avg !== null ? ` · 我给 ${avg} ★（${reviews.length}）` : ''}</div>
@@ -270,7 +286,7 @@ function renderShop([id]) {
       ${platformBtn(shop.id)}
     </div>
     ${shop.note ? `<div class="notice">📌 ${esc(shop.note)}</div>` : ''}
-    ${dishes.length ? menu : emptyState('这家店还没有菜', '去「管理」里录几道', '/manage', '去录菜', 'assets/lulu-cooking.webp')}
+    ${dishes.length ? menu : emptyState('这家店还没有菜', '去「管理」里录几道', '/manage', '去录菜', LULU.cooking)}
     ${reviewSection(shop)}`;
 }
 
@@ -350,7 +366,7 @@ function renderOrder() {
       '去店铺里挑几道菜',
       '/',
       '去点菜',
-      'assets/lulu-waiting.webp',
+      LULU.waiting,
       history.length ? `
         <section class="block">
           <h2 class="block-title">以前点过</h2>
@@ -373,7 +389,8 @@ function renderOrder() {
   const total = store.total(order);
 
   return `
-    <div class="page-head" style="background:var(--yellow)">
+    <div class="page-head">
+      ${mascot(LULU.ride)}
       <div>
         <div class="shop-title">今天要点这些</div>
         <div class="shop-sub">${order.items.length} 个菜 · ${order.items.reduce((s, i) => s + i.qty, 0)} 份</div>
@@ -430,7 +447,8 @@ function renderManage() {
   const tab = manageShop;
 
   return `
-    <div class="page-head" style="background:var(--yellow)">
+    <div class="page-head">
+      ${mascot()}
       <div>
         <div class="shop-title">管理</div>
         <div class="shop-sub">录店、录菜，只有你会用到</div>
@@ -604,7 +622,7 @@ function openReviewSheet(shopId, orderId) {
   sheet.innerHTML = `
     <div class="sheet">
       <div class="sheet-head">
-        <span class="sheet-avatar">${esc((shop.name || '店').slice(0, 1))}</span>
+        ${mascot(LULU.face, 'sheet-mascot')}
         <div><div class="sheet-name">评价 ${esc(shop.name)}</div>
         <div class="dim">${orderId ? '记在今天这笔单子上' : '补录一条历史评价'}</div></div>
       </div>
@@ -721,6 +739,7 @@ function openDishForm(shopId) {
   sheet.innerHTML = `
     <div class="sheet">
       <div class="sheet-head">
+        ${mascot(LULU.cooking, 'sheet-mascot')}
         <div>
           <div class="sheet-name">在「${esc(shop.name)}」录一道菜</div>
           <div class="dim">图片和描述她会看到</div>
@@ -944,7 +963,7 @@ function currentQty(order, idx) { return order.items[idx].qty; }
 function emptyState(title, sub, goPath, btnText, img, extra = '') {
   return `
     <div class="empty">
-      ${img ? `<img src="${img}" alt="" class="empty-img">` : ''}
+      ${img ? `<div class="empty-art"><img src="${img}" alt="" class="empty-img"></div>` : ''}
       <h2>${esc(title)}</h2>
       <p>${esc(sub)}</p>
       <button class="btn-primary" data-go="${goPath}">${esc(btnText)}</button>
