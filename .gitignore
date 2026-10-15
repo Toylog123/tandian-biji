@@ -6,3 +6,6 @@ node_modules/
 
 # 临时测试页
 _test/
+
+# 提交信息临时文件（避免 commit -F 把 BOM 带进标题）
+.commit-msg.txt
