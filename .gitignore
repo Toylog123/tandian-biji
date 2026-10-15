@@ -1,0 +1,8 @@
+# 运行时/编辑器杂物
+.DS_Store
+Thumbs.db
+node_modules/
+*.log
+
+# 临时测试页
+_test/

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#FFD100">
+  <title>今天吃啥</title>
+  <link rel="icon" href="assets/lulu-app-icon.webp">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <main id="app"></main>
+
+  <nav class="tabbar">
+    <a href="#/" data-tab="shops">
+      <span class="ti">🏠</span><span>店铺</span>
+    </a>
+    <a href="#/order" data-tab="order">
+      <span class="ti">🧾<em class="badge" id="cartBadge"></em></span><span>清单</span>
+    </a>
+    <a href="#/manage" data-tab="manage">
+      <span class="ti">⚙️</span><span>管理</span>
+    </a>
+  </nav>
+
+  <!--
+    选图用的 input。放在 #app 外面有两个原因：
+    1. 页面每次重画都会冲掉 #app 里的东西，常驻元素不能放里面；
+    2. iOS Safari 对「临时插一个 input 进去再 .click()」的老写法有过坑，
+       用真实在 DOM 里的 input + <label for> 最稳。
+  -->
+  <input type="file" id="picInput" accept="image/*" tabindex="-1" aria-hidden="true"
+         style="position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none">
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
