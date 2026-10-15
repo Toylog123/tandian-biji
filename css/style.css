@@ -216,21 +216,13 @@ input,select{font:inherit;color:inherit}
 
 /* ---------- 评价 ---------- */
 .avg-chip{background:var(--yellow);color:#5c4a00;padding:2px 9px;border-radius:7px;font-size:12px}
-.rev-row{
-  background:var(--card);border-radius:14px;padding:13px 15px;margin-bottom:9px;
-  box-shadow:var(--sh-1);position:relative;
-}
 .rev-stars{font-size:14px;letter-spacing:1px;line-height:1}
 .rev-stars .on,.star-pick .on{color:#F0B400}
 .rev-stars span:not(.on){color:#E3DDD0}
-.rev-text{font-size:14px;margin-top:6px;line-height:1.5}
 .rev-tag{
   display:inline-block;font-size:11px;background:#F3EEE2;color:#7a6a45;
   padding:2px 8px;border-radius:6px;margin:7px 5px 0 0;
 }
-.rev-when{font-size:11.5px;color:#B5AFA2;margin-top:8px}
-.rev-when .link-del{margin-left:10px}
-
 .star-pick{display:flex;gap:4px}
 .star-pick button{font-size:32px;line-height:1;color:#E3DDD0;transition:transform .1s}
 .star-pick button:active{transform:scale(1.15)}
@@ -421,3 +413,112 @@ input,select{font:inherit;color:inherit}
 @media (max-width:520px){
   .total-bar{bottom:76px}
 }
+
+/* ============================================================
+   探店档案：评分分组 / 一句话总结 / 探店记录时间线
+   ============================================================ */
+
+/* 档位色。跟 --yellow 同一套暖调，但「别再去」必须一眼就红，
+   这是这个应用唯一有「避雷」语义的地方，颜色不能让步。 */
+:root{
+  --t-love:#E8890C;
+  --t-love-wash:#FFF3DC;
+  --t-ok:#3BA55C;
+  --t-ok-wash:#EAF6EE;
+  --t-meh:#8C887E;
+  --t-meh-wash:#F2F0EA;
+  --t-avoid:#D9484B;
+  --t-avoid-wash:#FCECEC;
+}
+
+/* ---------- 档位标记 ---------- */
+.avg-chip{
+  display:inline-flex;align-items:center;background:var(--yellow-wash);
+  color:#8A6A00;font-size:11.5px;font-weight:700;padding:1px 7px;
+  border-radius:999px;vertical-align:2px;margin-left:6px;flex:none;
+}
+.tier-tag{
+  display:inline-flex;align-items:center;gap:3px;font-size:12.5px;
+  font-weight:700;padding:2px 9px;border-radius:999px;
+}
+.t-love .avg-chip{background:var(--t-love-wash);color:var(--t-love)}
+.t-ok   .avg-chip{background:var(--t-ok-wash);color:var(--t-ok)}
+.t-meh  .avg-chip{background:var(--t-meh-wash);color:var(--t-meh)}
+.t-avoid .avg-chip{background:var(--t-avoid-wash);color:var(--t-avoid)}
+
+/* 档位标记自己就带档位类（class="tier-tag t-love"），
+   不是 .t-love 的后代，所以要单独写，不能蹭上面那组 */
+.tier-tag.t-love {background:var(--t-love-wash);color:var(--t-love)}
+.tier-tag.t-ok   {background:var(--t-ok-wash);color:var(--t-ok)}
+.tier-tag.t-meh  {background:var(--t-meh-wash);color:var(--t-meh)}
+.tier-tag.t-avoid{background:var(--t-avoid-wash);color:var(--t-avoid)}
+
+/* 卡片左侧一道竖色条——比整张卡片染色克制，但扫一眼就能分档 */
+.shop-card{
+  position:relative;overflow:hidden;
+  border-left:4px solid var(--line);
+}
+.shop-card.t-love {border-left-color:var(--t-love)}
+.shop-card.t-ok   {border-left-color:var(--t-ok)}
+.shop-card.t-meh  {border-left-color:var(--t-meh)}
+.shop-card.t-avoid{border-left-color:var(--t-avoid);background:#FFFBFB}
+.shop-card.t-avoid .shop-name{color:#A93A3D}
+
+/* 分组标题 */
+.grp-avoid .block-title{color:var(--t-avoid)}
+.grp-love  .block-title{color:var(--t-love)}
+.grp-ok    .block-title{color:var(--t-ok)}
+.grp-none .block-title{color:var(--dim)}
+
+/* 一句话总结：这是他下次想起来这家店的唯一凭据，
+   所以给它独立的一块底色，比塞进 note 里显眼得多 */
+.summary-box{
+  background:linear-gradient(135deg,#FFF9E8,#FFF3D6);
+  border:1px solid #F3E2B4;border-left:4px solid var(--yellow);
+  border-radius:14px;padding:13px 15px;margin:12px 0;
+  font-size:14.5px;line-height:1.7;color:#4A3D10;font-weight:500;
+}
+.summary-edit{
+  min-height:60px;resize:vertical;line-height:1.6;font-family:inherit;
+}
+.block-title.spaced{margin-top:22px}
+
+/* ---------- 探店记录 ---------- */
+.visit{
+  background:var(--card);border-radius:14px;padding:12px 14px;
+  margin-bottom:10px;box-shadow:var(--sh-1);
+  /* 左侧一道竖线串起时间线 */
+  border-left:3px solid var(--yellow-wash);
+}
+.visit-head{
+  display:flex;align-items:center;gap:9px;margin-bottom:5px;flex-wrap:wrap;
+}
+.visit-date{
+  font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums;
+  background:var(--bg);padding:1px 8px;border-radius:999px;
+}
+.visit-head .link-del{margin-left:auto}
+.visit-text{font-size:14px;line-height:1.65;color:var(--ink);margin:2px 0 4px}
+.visit-imgs{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));
+  gap:6px;margin-top:9px;
+}
+.visit-imgs img{
+  width:100%;aspect-ratio:1;object-fit:cover;
+  border-radius:10px;background:#F5EFE2;display:block;
+}
+
+/* 弹层里的选图区 */
+.visit-pick{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
+.vimg{position:relative;width:74px;height:74px}
+.vimg img{
+  width:100%;height:100%;object-fit:cover;border-radius:11px;display:block;
+  background:#F5EFE2;
+}
+.vimg button{
+  position:absolute;top:-5px;right:-5px;width:21px;height:21px;
+  border-radius:999px;border:0;background:rgba(43,42,38,.72);color:#fff;
+  font-size:11px;line-height:1;cursor:pointer;display:flex;
+  align-items:center;justify-content:center;padding:0;
+}
+

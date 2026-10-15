@@ -1,4 +1,4 @@
-import { store, money } from './store.js';
+import { store, money, TIERS, today } from './store.js';
 import { compressImage, usage } from './img.js';
 import * as backend from './backend.js';
 
@@ -181,58 +181,98 @@ window.addEventListener('focus', () => {
 });
 
 /* ============================================================
-   页面 1：店铺列表（女朋友最常看的页面）
+   页面 1：探店档案（按评分分组，一眼躲开踩雷的）
    ============================================================ */
 
 function renderShops() {
   const shops = store.shops();
   const pending = store.pendingOrder();
+  const rated = shops.filter(s => store.tierOf(s.id));
+  const best = rated.length ? Math.max(...rated.map(s => store.avgRating(s.id))) : null;
 
   const banner = `
     <div class="banner">
       <img src="${LULU.ride}" alt="" class="banner-img">
       <div class="banner-txt">
-        <strong>今天想吃点什么？</strong>
-        <span>${shops.length ? `已经收录 ${shops.length} 家店，翻翻看` : '还没有店，去「管理」里录一家'}</span>
+        <strong>吃过哪些店，还记得吗</strong>
+        <span>${
+          shops.length
+            ? (rated.length
+                ? `${shops.length} 家 · 最高 ${best} ★`
+                : `${shops.length} 家，都还没记过`)
+            : '还没有店，去「管理」里记一家'
+        }</span>
       </div>
     </div>`;
 
-  const byCat = {};
-  shops.forEach(s => { (byCat[s.category || '其他'] ||= []).push(s); });
+  if (!shops.length) {
+    return banner + emptyState(
+      '还没记过任何一家店', '吃完顺手记一条，下次就有底了',
+      '/manage', '去记店', LULU.cooking);
+  }
 
-  const body = Object.keys(byCat).length
-    ? Object.entries(byCat).map(([cat, list]) => `
-        <section class="block">
-          <h2 class="block-title">${esc(cat)} <span class="dim">${list.length} 家</span></h2>
-          <div class="shop-list">
-            ${list.map(s => {
-              const count = store.dishes(s.id).length;
-              const avg = store.avgRating(s.id);
-              const rc = store.reviewsOf(s.id).length;
-              return `
-              <button class="shop-card" data-go="/shop/${s.id}">
-                <div class="shop-avatar">${esc((s.name || '店').slice(0, 1))}</div>
-                <div class="shop-main">
-                  <div class="shop-name">${esc(s.name)}</div>
-                  <div class="shop-meta">
-                    <span class="chip chip-plat">${esc(s.platform)}</span>
-                    <span>${count} 道菜</span>
-                    ${avg !== null ? `<span class="star">我给 ${avg} ★ · ${rc} 条</span>` : ''}
-                  </div>
-                  ${s.note ? `<div class="shop-note">${esc(s.note)}</div>` : ''}
-                </div>
-                <div class="shop-go">›</div>
-              </button>`;
-            }).join('')}
-          </div>
-        </section>`).join('')
-    : emptyState('还没有收录店铺', '去「管理」里录一家你最爱的外卖', '/manage', '去录店', LULU.cooking);
+  // 每组内部：均分高的排前面
+  const groups = TIERS.map(t => ({ ...t, list: [] }));
+  const unrated = [];
+  shops.forEach(s => {
+    const t = store.tierOf(s.id);
+    if (t) groups.find(g => g.key === t.key).list.push(s);
+    else unrated.push(s);
+  });
+  groups.forEach(g => g.list.sort((a, b) => store.avgRating(b.id) - store.avgRating(a.id)));
+
+  const section = (title, list, cls) => list.length ? `
+    <section class="block ${cls}">
+      <h2 class="block-title">${title} <span class="dim">${list.length} 家</span></h2>
+      <div class="shop-list">${list.map(shopCard).join('')}</div>
+    </section>` : '';
+
+  const body = [
+    ...groups.map(g => section(`${g.emoji} ${g.label}`, g.list, `grp-${g.cls}`)),
+    section('❓ 还没记过', unrated, 'grp-none'),
+  ].join('');
 
   return `
     ${pending && pending.items.length ? pendingStrip(pending) : ''}
     ${banner}
     ${body}`;
 }
+
+/** 档案卡片：一句话总结 + 平均分 + 去过几次 */
+function shopCard(s) {
+  const avg = store.avgRating(s.id);
+  const tier = store.tierOf(s.id);
+  const times = store.visitsOf(s.id).length;
+  const last = store.lastVisitOf(s.id);
+
+  return `
+    <button class="shop-card ${tier ? tier.cls : ''}" data-go="/shop/${s.id}">
+      <div class="shop-avatar">${esc((s.name || '店').slice(0, 1))}</div>
+      <div class="shop-main">
+        <div class="shop-name">
+          ${esc(s.name)}
+          ${avg !== null ? `<span class="avg-chip">${avg} ★</span>` : ''}
+        </div>
+        <div class="shop-meta">
+          <span class="chip chip-plat">${esc(s.platform)}</span>
+          ${s.category ? `<span>${esc(s.category)}</span>` : ''}
+          ${last ? `<span>去过 ${times} 次 · 最近 ${prettyDate(last.date)}</span>` : ''}
+        </div>
+        ${s.summary
+          ? `<div class="shop-note">${esc(s.summary)}</div>`
+          : `<div class="shop-note dim">还没写一句话总结</div>`}
+      </div>
+      <div class="shop-go">›</div>
+    </button>`;
+}
+
+/** 'YYYY-MM-DD' -> '10/12'；今年的就省去年份 */
+function prettyDate(iso) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '';
+  const [y, m, d] = iso.split('-');
+  return (+y === new Date().getFullYear()) ? `${+m}/${+d}` : `${y.slice(2)}/${+m}/${+d}`;
+}
+
 
 function pendingStrip(order) {
   const n = order.items.reduce((s, i) => s + i.qty, 0);
@@ -244,7 +284,7 @@ function pendingStrip(order) {
 }
 
 /* ============================================================
-   页面 2：店铺详情 + 点菜
+   页面 2：这家店的档案
    ============================================================ */
 
 function renderShop([id]) {
@@ -252,8 +292,8 @@ function renderShop([id]) {
   if (!shop) return emptyState('这家店不见了', '可能已经被删掉了', '/', '回到首页', LULU.waiting);
 
   const dishes = store.dishes(id);
-  const reviews = store.reviewsOf(id);
   const avg = store.avgRating(id);
+  const tier = store.tierOf(id);
   const byCat = {};
   dishes.forEach(d => { (byCat[d.tags?.[0] && d.tags[0].startsWith('#') ? d.tags[0] : '全部'] ||= []).push(d); });
 
@@ -281,47 +321,60 @@ function renderShop([id]) {
       ${mascot()}
       <div style="flex:1">
         <div class="shop-title">${esc(shop.name)}</div>
-        <div class="shop-sub">${esc(shop.platform)} · ${dishes.length} 道菜${avg !== null ? ` · 我给 ${avg} ★（${reviews.length}）` : ''}</div>
+        <div class="shop-sub">
+          ${avg !== null
+            ? `<span class="tier-tag ${tier.cls}">${tier.emoji} ${tier.label} · ${avg} ★</span>`
+            : `${esc(shop.platform)} · 还没记过`}
+        </div>
       </div>
       ${platformBtn(shop.id)}
     </div>
+
+    ${shop.summary ? `<div class="summary-box">${esc(shop.summary)}</div>` : ''}
     ${shop.note ? `<div class="notice">📌 ${esc(shop.note)}</div>` : ''}
-    ${dishes.length ? menu : emptyState('这家店还没有菜', '去「管理」里录几道', '/manage', '去录菜', LULU.cooking)}
-    ${reviewSection(shop)}`;
+
+    ${visitSection(shop)}
+
+    ${dishes.length
+      ? `<h2 class="block-title spaced">这家店的菜 <span class="dim">${dishes.length}</span></h2>${menu}`
+      : emptyState('这家店还没有菜', '去「管理」里记几道', '/manage', '去记菜', LULU.cooking)}`;
 }
 
-/** 店铺页底部的「我的评价」 */
-function reviewSection(shop) {
-  const list = store.reviewsOf(shop.id);
+/**
+ * 探店记录：去一次一条，按时间倒序。
+ * 这是这个应用的正文——菜可以忘，哪次好吃哪次踩雷不能忘。
+ */
+function visitSection(shop) {
+  const list = store.visitsOf(shop.id);
   const avg = store.avgRating(shop.id);
 
   return `
     <section class="block">
       <h2 class="block-title">
-        我的评价
+        探店记录
         ${avg !== null ? `<span class="avg-chip">${avg} ★</span>` : ''}
-        <button class="btn-primary btn-sm" data-review="${shop.id}">
-          ${list.length ? '再写一条' : '写评价'}
-        </button>
+        <span class="dim">${list.length} 次</span>
+        <button class="btn-primary btn-sm" data-visit="${shop.id}">记一次</button>
       </h2>
 
-      ${list.length ? list.map(r => {
-        const d = new Date(r.createdAt);
-        const when = Number.isFinite(d.getFullYear()) && d.getFullYear() > 2000
-          ? `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
-          : `${d.getMonth() + 1}/${d.getDate()}`;
-        return `
-        <div class="rev-row">
-          <div class="rev-stars">${stars(r.rating)}</div>
-          ${r.text ? `<div class="rev-text">${esc(r.text)}</div>` : ''}
-          ${(r.tags || []).map(t => `<span class="rev-tag">${esc(t)}</span>`).join('')}
-          <div class="rev-when">${when}
-            <button class="link-del" data-delrev="${r.id}">删</button>
+      ${list.length ? list.map(v => `
+        <div class="visit">
+          <div class="visit-head">
+            <div class="rev-stars">${stars(v.rating)}</div>
+            <div class="visit-date">${esc(v.date || '')}</div>
+            <button class="link-del" data-delvisit="${v.id}">删</button>
           </div>
-        </div>`;
-      }).join('') : `<div class="dim pad">还没评价过。下次吃完顺手写一句，下次就有底了。</div>`}
+          ${v.text ? `<div class="visit-text">${esc(v.text)}</div>` : ''}
+          ${(v.tags || []).map(t => `<span class="rev-tag">${esc(t)}</span>`).join('')}
+          ${(v.images || []).length ? `
+            <div class="visit-imgs">
+              ${v.images.map(src => `<img src="${esc(src)}" alt="" loading="lazy">`).join('')}
+            </div>` : ''}
+        </div>`).join('')
+      : `<div class="dim pad">还没记过。下次吃完顺手记一条，下次就有底了。</div>`}
     </section>`;
 }
+
 
 function stars(n) {
   return Array.from({ length: 5 }, (_, i) =>
@@ -422,7 +475,7 @@ function renderOrder() {
           <span>这家小计 <strong>${money(items.reduce((s, i) => s + i.price * i.qty, 0))}</strong></span>
           <div class="row-btns">
             ${platformBtn(items[0].shopId)}
-            <button class="link-btn" data-review="${items[0].shopId}" data-order="${order.id}">⭐ 评价</button>
+            <button class="link-btn" data-visit="${items[0].shopId}" data-order="${order.id}">⭐ 记探店</button>
           </div>
         </div>
       </section>`).join('')}
@@ -451,22 +504,25 @@ function renderManage() {
       ${mascot()}
       <div>
         <div class="shop-title">管理</div>
-        <div class="shop-sub">录店、录菜，只有你会用到</div>
+        <div class="shop-sub">记店、记菜、写总结，只有你会用到</div>
       </div>
       ${syncChip()}
-      <button class="btn-primary btn-sm" data-addshop>＋ 录店</button>
+      <button class="btn-primary btn-sm" data-addshop>＋ 记店</button>
     </div>
 
     <section class="block">
       <h2 class="block-title">我的店 <span class="dim">${shops.length}</span></h2>
-      ${shops.map(s => `
+      ${shops.map(s => {
+        const t = store.tierOf(s.id);
+        return `
         <div class="mng-row ${s.id === tab ? 'on' : ''}">
           <button class="mng-pick" data-pick="${s.id}">
             <strong>${esc(s.name)}</strong>
-            <span class="dim">${esc(s.platform)} · ${store.dishes(s.id).length} 道菜</span>
+            <span class="dim">${t ? `${t.emoji} ${t.label} · ${store.avgRating(s.id)} ★ · ${store.visitsOf(s.id).length} 次` : '还没记过'}</span>
           </button>
           <button class="link-del" data-delshop="${s.id}">删</button>
-        </div>`).join('') || `<div class="dim pad">还没有店</div>`}
+        </div>`;
+      }).join('') || `<div class="dim pad">还没有店</div>`}
     </section>
 
     ${tab && store.shop(tab) ? shopSettings(store.shop(tab)) : ''}
@@ -494,6 +550,8 @@ function shopSettings(shop) {
           <input class="line-edit grow" value="${esc(shop.category || '')}"
                  data-shcat="${shop.id}" placeholder="分类">
         </div>
+        <textarea class="line-edit summary-edit" rows="2" data-shsum="${shop.id}"
+          placeholder="一句话总结：这家到底行不行？下次靠这句想起来">${esc(shop.summary || '')}</textarea>
         <input class="line-edit" value="${esc(shop.note || '')}" data-shnote="${shop.id}"
                placeholder="备注：配送快 / 别点微辣">
         <input class="line-edit link-edit" value="${esc(shop.link || '')}" data-shlink="${shop.id}"
@@ -514,7 +572,7 @@ function dishManager(shopId) {
   return `
     <section class="block">
       <h2 class="block-title">${esc(shop.name)} 的菜
-        <button class="btn-primary btn-sm" data-adddish="${shopId}">＋ 录菜</button>
+        <button class="btn-primary btn-sm" data-adddish="${shopId}">＋ 记菜</button>
       </h2>
       ${dishes.map(d => `
         <div class="mng-row col">
@@ -527,7 +585,7 @@ function dishManager(shopId) {
             <input class="line-edit" value="${esc(d.name)}" data-dname="${d.id}" placeholder="菜名">
           </div>
           <textarea class="line-edit desc-edit" rows="2" data-ddesc="${d.id}"
-                    placeholder="怎么点？什么口味？忌口…（她点菜时会看到）">${esc(d.desc || '')}</textarea>
+                    placeholder="怎么点？什么口味？忌口…（点菜时会看到）">${esc(d.desc || '')}</textarea>
           <div class="mng-sub">
             <input class="line-edit w-price" type="number" step="0.5" value="${d.price}" data-dprice="${d.id}">
             <label class="chk"><input type="checkbox" ${d.available !== false ? 'checked' : ''} data-davail="${d.id}"> 在售</label>
@@ -609,13 +667,19 @@ function openAddSheet(dishId) {
   });
 }
 
-/* ---------- 弹层：写评价 ---------- */
+/* ---------- 弹层：记一次探店 ---------- */
 
 const QUICK_TAGS = ['好吃', '量大', '踩雷', '别再点', '送得快', '有点咸', '分量足'];
 
-function openReviewSheet(shopId, orderId) {
+function openVisitSheet(shopId, orderId) {
   const shop = store.shop(shopId);
   if (!shop) return;
+
+  const last = store.lastVisitOf(shopId);
+  // 默认填上次的分：多半这次感受差不多，少点一下。但日期要重置成今天。
+  let rating = last ? last.rating : 4;
+  let images = [];
+  const picked = new Set(last ? last.tags : []);
 
   const sheet = document.createElement('div');
   sheet.className = 'sheet-mask';
@@ -623,14 +687,19 @@ function openReviewSheet(shopId, orderId) {
     <div class="sheet">
       <div class="sheet-head">
         ${mascot(LULU.face, 'sheet-mascot')}
-        <div><div class="sheet-name">评价 ${esc(shop.name)}</div>
-        <div class="dim">${orderId ? '记在今天这笔单子上' : '补录一条历史评价'}</div></div>
+        <div><div class="sheet-name">在「${esc(shop.name)}」记一次</div>
+        <div class="dim">${orderId ? '记在今天这笔单子上' : '去一次记一条，以前的不动'}</div></div>
+      </div>
+
+      <div class="field">
+        <label>什么时候去的</label>
+        <input id="vsDate" type="date" value="${today()}" max="${today()}">
       </div>
 
       <div class="field">
         <label>这次吃得怎么样</label>
         <div class="star-pick" id="starPick">
-          ${[1, 2, 3, 4, 5].map(i => `<button data-star="${i}" class="${i <= 4 ? 'on' : ''}">★</button>`).join('')}
+          ${[1, 2, 3, 4, 5].map(i => `<button data-star="${i}" class="${i <= rating ? 'on' : ''}">★</button>`).join('')}
         </div>
         <div class="star-word" id="starWord">还不错</div>
       </div>
@@ -638,24 +707,28 @@ function openReviewSheet(shopId, orderId) {
       <div class="field">
         <label>快速标签（可多选）</label>
         <div class="tag-pick" id="tagPick">
-          ${QUICK_TAGS.map(t => `<button class="tag-opt" data-tag="${t}">${t}</button>`).join('')}
+          ${QUICK_TAGS.map(t => `<button class="tag-opt ${picked.has(t) ? 'on' : ''}" data-tag="${t}">${t}</button>`).join('')}
         </div>
       </div>
 
       <div class="field">
-        <label>想说点什么</label>
-        <textarea id="revText" rows="3" placeholder="例：汤很足，鸡肉不柴。下次还点这家。"></textarea>
+        <label>一句话（下次就靠这句想起来）</label>
+        <textarea id="vsText" rows="2" placeholder="例：汤很足，鸡肉不柴。下次还来。"></textarea>
       </div>
 
-      <button class="btn-primary" id="confirmRev">保存评价</button>
-      <button class="btn-ghost" id="cancelRev">取消</button>
+      <div class="field">
+        <label>照片（最多 4 张，会自动压小）</label>
+        <div class="visit-pick" id="vsImgs"></div>
+        <button class="link-btn" id="vsAdd" hidden>＋ 再加一张</button>
+      </div>
+
+      <button class="btn-primary" id="confirmVisit">保存这条记录</button>
+      <button class="btn-ghost" id="cancelVisit">取消</button>
     </div>`;
 
   document.body.appendChild(sheet);
 
   const WORDS = { 1: '难以下咽', 2: '不太行', 3: '一般般', 4: '还不错', 5: '很好吃' };
-  let rating = 4;
-  const picked = new Set();
 
   const paintStars = () => {
     sheet.querySelectorAll('[data-star]').forEach(b =>
@@ -663,8 +736,20 @@ function openReviewSheet(shopId, orderId) {
     sheet.querySelector('#starWord').textContent = WORDS[rating];
   };
 
+  const gallery = sheet.querySelector('#vsImgs');
+  const addBtn = sheet.querySelector('#vsAdd');
+  const paintImgs = () => {
+    gallery.innerHTML = images.map((src, i) => `
+      <div class="vimg">
+        <img src="${esc(src)}" alt="">
+        <button data-rmimg="${i}" title="删掉">✕</button>
+      </div>`).join('');
+    addBtn.hidden = images.length >= 4;
+  };
+  paintImgs();
+
   sheet.addEventListener('click', e => {
-    if (e.target === sheet || e.target.id === 'cancelRev') return sheet.remove();
+    if (e.target === sheet || e.target.id === 'cancelVisit') return sheet.remove();
 
     const s = e.target.closest('[data-star]');
     if (s) { rating = Number(s.dataset.star); return paintStars(); }
@@ -677,23 +762,43 @@ function openReviewSheet(shopId, orderId) {
       return;
     }
 
-    if (e.target.id === 'confirmRev') {
-      store.addReview({
-        shopId,
-        orderId: orderId || null,
-        rating,
-        text: sheet.querySelector('#revText').value.trim(),
-        tags: [...picked],
+    const rm = e.target.closest('[data-rmimg]');
+    if (rm) { images.splice(Number(rm.dataset.rmimg), 1); return paintImgs(); }
+
+    if (e.target.id === 'vsAdd') {
+      if (images.length >= 4) return;
+      return pickImage(async r => {
+        if (!r) return;
+        if (!r.ok) return toast(r.error, 3000);
+        images.push(r.url);
+        paintImgs();
       });
-      sheet.remove();
-      render();
+    }
+
+    if (e.target.id === 'confirmVisit') {
+      try {
+        store.addVisit({
+          shopId,
+          orderId: orderId || null,
+          date: sheet.querySelector('#vsDate').value || today(),
+          rating,
+          text: sheet.querySelector('#vsText').value.trim(),
+          tags: [...picked],
+          images,
+        });
+        sheet.remove();
+        render();
+      } catch (err) {
+        toast(err.message, 4500);
+      }
     }
   });
 
   paintStars();
 }
 
-/* ---------- 弹层：录店 / 录菜 ---------- */
+
+/* ---------- 弹层：记店 / 记菜 ---------- */
 
 function openForm(title, fields, onSubmit) {
   const sheet = document.createElement('div');
@@ -725,7 +830,7 @@ function openForm(title, fields, onSubmit) {
   });
 }
 
-/* ---------- 弹层：录菜（自带图片槽，所以没用通用的 openForm） ---------- */
+/* ---------- 弹层：记菜（自带图片槽，所以没用通用的 openForm） ---------- */
 
 function openDishForm(shopId) {
   const shop = store.shop(shopId);
@@ -741,8 +846,8 @@ function openDishForm(shopId) {
       <div class="sheet-head">
         ${mascot(LULU.cooking, 'sheet-mascot')}
         <div>
-          <div class="sheet-name">在「${esc(shop.name)}」录一道菜</div>
-          <div class="dim">图片和描述她会看到</div>
+          <div class="sheet-name">在「${esc(shop.name)}」记一道菜</div>
+          <div class="dim">照片和描述，下次点菜时会看到</div>
         </div>
       </div>
 
@@ -758,7 +863,7 @@ function openDishForm(shopId) {
       <div class="field"><label>菜名</label><input id="dfName" placeholder="例：黄焖鸡米饭"></div>
       <div class="field"><label>价格</label><input id="dfPrice" type="number" step="0.5" placeholder="22"></div>
       <div class="field">
-        <label>描述（她会看到）</label>
+        <label>描述（点菜时会看到）</label>
         <textarea id="dfDesc" rows="3" placeholder="例：偏咸，备注少盐。米饭管够。"></textarea>
       </div>
 
@@ -828,15 +933,15 @@ function openDishForm(shopId) {
    ============================================================ */
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-go],[data-add],[data-plus],[data-minus],[data-del],[data-done],[data-clear],[data-pick],[data-delshop],[data-addshop],[data-adddish],[data-deldish],[data-review],[data-delrev],[data-dishstar],[data-jump],[data-pic],[data-unpic]');
+  const t = e.target.closest('[data-go],[data-add],[data-plus],[data-minus],[data-del],[data-done],[data-clear],[data-pick],[data-delshop],[data-addshop],[data-adddish],[data-deldish],[data-visit],[data-delvisit],[data-dishstar],[data-jump],[data-pic],[data-unpic]');
   if (!t) return;
 
   const order = store.pendingOrder();
 
   if (t.dataset.go)      return go(t.dataset.go);
   if (t.dataset.add)     return openAddSheet(t.dataset.add);
-  if (t.dataset.review)  return openReviewSheet(t.dataset.review, t.dataset.order || null);
-  if (t.dataset.delrev)  return store.removeReview(t.dataset.delrev) ?? render();
+  if (t.dataset.visit)   return openVisitSheet(t.dataset.visit, t.dataset.order || null);
+  if (t.dataset.delvisit) return store.removeVisit(t.dataset.delvisit) ?? render();
   if (t.dataset.pick)    { manageShop = t.dataset.pick; return render(); }
   if (t.dataset.del && order)   { store.removeItem(order.id, +t.dataset.del); return render(); }
   if (t.dataset.minus && order) { store.updateItem(order.id, +t.dataset.minus, { qty: currentQty(order, +t.dataset.minus) - 1 }); return render(); }
@@ -879,7 +984,7 @@ document.addEventListener('click', e => {
     store.setOrderStatus(order.id, 'ordered');
     const pending = store.unratedShops(order);
     alert(pending.length
-      ? '已标记为「去下单了」。\n\n吃完别忘了在清单里给这几家写个评价，下次就有底了：\n' +
+      ? '已标记为「去下单了」。\n\n吃完别忘了在清单里给这几家记一条探店，下次就有底了：\n' +
         pending.map(s => '· ' + ((store.shop(s) || {}).name || '')).join('\n')
       : '已标记为「去下单了」。');
     return render();
@@ -891,7 +996,7 @@ document.addEventListener('click', e => {
   }
 
   if (t.dataset.addshop) {
-    return openForm('录一家新店', [
+    return openForm('记一家新店', [
       { key: 'name',     label: '店名',     ph: '例：巷口黄焖鸡' },
       { key: 'platform', label: '在哪点',   options: ['美团', '饿了么', '其他'] },
       { key: 'category', label: '分类',     ph: '例：快餐简餐' },
@@ -930,6 +1035,7 @@ document.addEventListener('input', e => {
     if (t.dataset.dprice)         store.updateDish(t.dataset.dprice, { price: t.value });
     if (t.dataset.shname)         store.updateShop(t.dataset.shname, { name: t.value });
     if (t.dataset.shcat)          store.updateShop(t.dataset.shcat, { category: t.value });
+    if (t.dataset.shsum)          store.updateShop(t.dataset.shsum, { summary: t.value });
     if (t.dataset.shnote)         store.updateShop(t.dataset.shnote, { note: t.value });
     if (t.dataset.shlink) {
       store.updateShop(t.dataset.shlink, { link: t.value.trim() });

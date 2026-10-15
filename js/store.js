@@ -16,10 +16,18 @@ const KEY = 'lulu_family_menu_v1';
 
 const SEED = {
   shops: [
-    { id: 's1', name: '巷口黄焖鸡', platform: '美团', category: '快餐简餐', note: '就在小区南门，配送快', rating: 4.8, createdAt: 1 },
-    { id: 's2', name: '老四川麻辣烫', platform: '饿了么', category: '麻辣烫', note: '微辣就好，别太油', rating: 4.5, createdAt: 2 },
-    { id: 's3', name: '楼下沙县', platform: '美团', category: '快餐简餐', note: '早餐也不错', rating: 4.6, createdAt: 3 },
-    { id: 's4', name: '一点点', platform: '饿了么', category: '甜点饮品', note: '', rating: 4.9, createdAt: 4 },
+    { id: 's1', name: '巷口黄焖鸡', platform: '美团', category: '快餐简餐',
+      note: '就在小区南门，配送快', rating: 4.8, createdAt: 1,
+      summary: '汤汁给得足，鸡肉嫩。就是偏咸，备注少盐。' },
+    { id: 's2', name: '老四川麻辣烫', platform: '饿了么', category: '麻辣烫',
+      note: '微辣就好，别太油', rating: 4.5, createdAt: 2,
+      summary: '汤底比别家香，丸子扎实。选菜别贪多，贵还不出数。' },
+    { id: 's3', name: '楼下沙县', platform: '美团', category: '快餐简餐',
+      note: '早餐也不错', rating: 2.5, createdAt: 3,
+      summary: '拌面咸得离谱，卤蛋不新鲜。已经不去第二次了。' },
+    { id: 's4', name: '一点点', platform: '饿了么', category: '甜点饮品',
+      note: '', rating: 5, createdAt: 4,
+      summary: '三分糖刚刚好，波霸很足。下午三点去人少。' },
   ],
   dishes: [
     { id: 'd1', shopId: 's1', name: '黄焖鸡米饭', price: 22, tags: ['招牌'], desc: '偏咸，备注少盐。米饭管够。', rating: 5, available: true },
@@ -35,15 +43,36 @@ const SEED = {
   ],
   orders: [],
 
-  /* 我的评价 —— 挂在店铺上，跟订单关联 */
-  reviews: [
-    { id: 'r1', shopId: 's1', orderId: null, rating: 5, text: '汤汁多，鸡肉嫩，好吃', tags: ['好吃'], createdAt: 3 },
-    { id: 'r2', shopId: 's1', orderId: null, rating: 4, text: '送得有点慢', tags: [], createdAt: 2 },
-    { id: 'r3', shopId: 's3', orderId: null, rating: 2, text: '卤蛋不新鲜，别再点了', tags: ['别再点'], createdAt: 1 },
+  /* 探店记录 —— 每去一次记一条，只往后加，不覆盖以前的。
+     date 是「什么时候去的」，不是录入时间；两者可能差很久（补录历史）。 */
+  visits: [
+    { id: 'v1', shopId: 's1', orderId: null, date: '2026-10-12', rating: 5,
+      text: '汤汁多，鸡肉嫩，好吃', tags: ['好吃'], images: [], createdAt: 1 },
+    { id: 'v2', shopId: 's1', orderId: null, date: '2026-09-28', rating: 4,
+      text: '送得有点慢', tags: [], images: [], createdAt: 2 },
+    { id: 'v3', shopId: 's3', orderId: null, date: '2026-10-05', rating: 2,
+      text: '卤蛋不新鲜，别再点了', tags: ['别再点'], images: [], createdAt: 3 },
+    { id: 'v4', shopId: 's3', orderId: null, date: '2026-08-19', rating: 3,
+      text: '蒸饺还行，拌面还是咸', tags: [], images: [], createdAt: 4 },
   ],
 
   people: ['我', '她'],
 };
+
+/**
+ * 评分档位。首页按这四组排，一眼躲开踩雷的。
+ *
+ * 阈值不是随手定的：5 星是「很好吃」、4 星「还不错」、3 星「一般般」，
+ * 2 星「不太行」、1 星「难以下咽」。均分 >=4.5 算值得专程去，
+ * <2.5 就是别再去了。
+ */
+export const TIERS = [
+  { key: 'love',  min: 4.5, label: '强烈推荐', emoji: '💛', cls: 't-love' },
+  { key: 'ok',    min: 3.5, label: '还可以',   emoji: '🙂', cls: 't-ok' },
+  { key: 'meh',   min: 2.5, label: '一般',     emoji: '😐', cls: 't-meh' },
+  { key: 'avoid', min: 0,   label: '别再去',   emoji: '⛔', cls: 't-avoid' },
+];
+
 
 /**
  * 各平台的入口。
@@ -77,8 +106,28 @@ function migrate(data) {
   if (!Array.isArray(data.shops))     data.shops = [];
   if (!Array.isArray(data.dishes))    data.dishes = [];
   if (!Array.isArray(data.orders))    data.orders = [];
-  if (!Array.isArray(data.reviews))   data.reviews = [];
   if (!Array.isArray(data.people))    data.people = ['我', '她'];
+
+  /* reviews -> visits。
+     以前叫「评价」，一个店一条；现在是「探店记录」，去一次记一条。
+     老数据直接搬过来，createdAt 反推日期当 date 用，
+     这样「今天存的」不会在时间线里莫名显示成 1970 年。 */
+  if (!Array.isArray(data.visits)) {
+    data.visits = (Array.isArray(data.reviews) ? data.reviews : []).map(r => ({
+      ...r,
+      date: r.date || fromTs(r.createdAt),
+      images: Array.isArray(r.images) ? r.images : [],
+    }));
+  }
+  delete data.reviews;
+
+  data.visits.forEach(v => {
+    if (!v.date)              v.date = fromTs(v.createdAt);
+    if (!Array.isArray(v.tags))    v.tags = [];
+    if (!Array.isArray(v.images)) v.images = [];
+    if (typeof v.text !== 'string') v.text = '';
+    if (v.rating == null)      v.rating = 3;
+  });
 
   // 菜品是后加 desc / rating / image 的，老数据里没有
   data.dishes.forEach(d => {
@@ -86,13 +135,29 @@ function migrate(data) {
     if (d.rating == null)             d.rating = null;
     if (typeof d.image !== 'string')  d.image = '';
   });
-  // 店铺是后加 link 的
+  // 店铺是后加 link / summary 的
   data.shops.forEach(s => {
-    if (typeof s.link !== 'string')   s.link = '';
-    if (typeof s.image !== 'string')  s.image = '';
+    if (typeof s.link !== 'string')    s.link = '';
+    if (typeof s.image !== 'string')   s.image = '';
+    if (typeof s.summary !== 'string') s.summary = '';
   });
   return data;
 }
+
+/** 时间戳 -> 'YYYY-MM-DD'；时间戳是秒（老示例数据）就乘 1000 */
+function fromTs(ts) {
+  const ms = Number(ts) < 1e12 ? Number(ts) * 1000 : Number(ts);
+  const d = new Date(ms || Date.now());
+  if (!Number.isFinite(d.getTime())) return today();
+  return d.toISOString().slice(0, 10);
+}
+
+export function today() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 
 function load() {
   try {
@@ -183,59 +248,79 @@ export const store = {
 
   people() { return db.people; },
 
-  /* ---------- 评价 ---------- */
+  /* ---------- 探店记录 ---------- */
 
-  reviewsOf(shopId) {
-    return db.reviews
-      .filter(r => r.shopId === shopId)
-      .sort((a, b) => b.createdAt - a.createdAt);
+  /** 这家店的全部记录，按去的时间倒序（没填日期的沉底） */
+  visitsOf(shopId) {
+    return db.visits
+      .filter(v => v.shopId === shopId)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.createdAt - a.createdAt);
   },
 
-  /** 这家店我给的均分，没有评价返回 null */
+  /** 最近一次去是什么时候去的；一次都没去过返回 null */
+  lastVisitOf(shopId) {
+    return this.visitsOf(shopId)[0] || null;
+  },
+
+  /** 这家店我给的均分，没有记录返回 null */
   avgRating(shopId) {
-    const list = db.reviews.filter(r => r.shopId === shopId);
+    const list = db.visits.filter(v => v.shopId === shopId);
     if (!list.length) return null;
-    return Math.round(list.reduce((s, r) => s + r.rating, 0) / list.length * 10) / 10;
+    return Math.round(list.reduce((s, v) => s + v.rating, 0) / list.length * 10) / 10;
   },
 
-  addReview(data) {
-    const r = {
-      id: uid('r'),
+  /** 这家店落在哪一档；没记录返回 null */
+  tierOf(shopId) {
+    const avg = this.avgRating(shopId);
+    if (avg === null) return null;
+    return TIERS.find(t => avg >= t.min) || TIERS[TIERS.length - 1];
+  },
+
+  /**
+   * 记一次探店。
+   * date 默认今天；补录以前去过的那次要显式传，不然时间线会排在最前面。
+   */
+  addVisit(data) {
+    const v = {
+      id: uid('v'),
       orderId: null,
+      date: today(),
       text: '',
       tags: [],
+      images: [],
       createdAt: Date.now(),
       ...data,
     };
-    r.rating = Math.min(5, Math.max(1, Number(r.rating) || 3));
-    db.reviews.push(r);
+    v.rating = Math.min(5, Math.max(1, Number(v.rating) || 3));
+    if (!v.date) v.date = today();
+    db.visits.push(v);
     save(db);
-    return r;
+    return v;
   },
 
-  updateReview(id, patch) {
-    const r = db.reviews.find(x => x.id === id);
-    if (!r) return null;
-    Object.assign(r, patch);
+  updateVisit(id, patch) {
+    const v = db.visits.find(x => x.id === id);
+    if (!v) return null;
+    Object.assign(v, patch);
     save(db);
-    return r;
+    return v;
   },
 
-  removeReview(id) {
-    db.reviews = db.reviews.filter(r => r.id !== id);
+  removeVisit(id) {
+    db.visits = db.visits.filter(v => v.id !== id);
     save(db);
   },
 
-  /** 某笔订单里还没评价的店 */
+  /** 某笔订单里还没写记录的店 */
   unratedShops(order) {
     if (!order) return [];
     const shopIds = [...new Set(order.items.map(i => i.shopId))];
-    return shopIds.filter(sid => !db.reviews.some(r => r.orderId === order.id && r.shopId === sid));
+    return shopIds.filter(sid => !db.visits.some(v => v.orderId === order.id && v.shopId === sid));
   },
 
   /* 店铺增删改 */
   addShop(data) {
-    const shop = { id: uid('s'), createdAt: Date.now(), rating: 0, note: '', platform: '美团', category: '', link: '', image: '', ...data };
+    const shop = { id: uid('s'), createdAt: Date.now(), rating: 0, note: '', summary: '', platform: '美团', category: '', link: '', image: '', ...data };
     db.shops.push(shop);
     save(db);
     return shop;
@@ -250,6 +335,7 @@ export const store = {
   removeShop(id) {
     db.shops = db.shops.filter(s => s.id !== id);
     db.dishes = db.dishes.filter(d => d.shopId !== id);
+    db.visits = db.visits.filter(v => v.shopId !== id);
     save(db);
   },
 
