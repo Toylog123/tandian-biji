@@ -12,50 +12,27 @@ import * as backend from './backend.js';
 
 const KEY = 'lulu_family_menu_v1';
 
-/* ---------- 示例数据 ---------- */
+/* ---------- 初始数据 ---------- */
 
+/**
+ * 故意是空的。
+ *
+ * 这是「我自己的探店档案库」，不是演示站。第一次打开就该是干净的空档案，
+ * 由本人从零开始录 —— 预置几家虚构的店反而会让人分不清哪条是真记录。
+ *
+ * 空状态下首页会显示「还没记过任何一家店」+「去记店」入口（见 app.js 的
+ * renderShops），点进去就是录店表单。
+ *
+ * 想临时灌一批假数据看效果：本地存储里删掉这一项再刷新即可。
+ *   localStorage.removeItem('lulu_family_menu_v1'); location.reload();
+ * 删完会重新用下面的空 SEED 初始化。想找回以前那批虚构数据，
+ * 见 git 历史 commit 287eeb8。
+ */
 const SEED = {
-  shops: [
-    { id: 's1', name: '巷口黄焖鸡', platform: '美团', category: '快餐简餐',
-      note: '就在小区南门，配送快', rating: 4.8, createdAt: 1,
-      summary: '汤汁给得足，鸡肉嫩。就是偏咸，备注少盐。' },
-    { id: 's2', name: '老四川麻辣烫', platform: '饿了么', category: '麻辣烫',
-      note: '微辣就好，别太油', rating: 4.5, createdAt: 2,
-      summary: '汤底比别家香，丸子扎实。选菜别贪多，贵还不出数。' },
-    { id: 's3', name: '楼下沙县', platform: '美团', category: '快餐简餐',
-      note: '早餐也不错', rating: 2.5, createdAt: 3,
-      summary: '拌面咸得离谱，卤蛋不新鲜。已经不去第二次了。' },
-    { id: 's4', name: '一点点', platform: '饿了么', category: '甜点饮品',
-      note: '', rating: 5, createdAt: 4,
-      summary: '三分糖刚刚好，波霸很足。下午三点去人少。' },
-  ],
-  dishes: [
-    { id: 'd1', shopId: 's1', name: '黄焖鸡米饭', price: 22, tags: ['招牌'], desc: '偏咸，备注少盐。米饭管够。', rating: 5, available: true },
-    { id: 'd2', shopId: 's1', name: '加份午餐肉', price: 6, tags: [], desc: '', rating: null, available: true },
-    { id: 'd3', shopId: 's1', name: '例汤', price: 3, tags: [], desc: '很烫，小孩慎点', rating: 3, available: true },
-    { id: 'd4', shopId: 's2', name: '麻辣烫（自己选菜）', price: 25, tags: ['自己选'], desc: '选菜别拿丸子，贵又不出数', rating: 4, available: true },
-    { id: 'd5', shopId: 's2', name: '加一份宽粉', price: 4, tags: [], desc: '', rating: null, available: true },
-    { id: 'd6', shopId: 's3', name: '蒸饺', price: 10, tags: [], desc: '早上现蒸的比中午好', rating: 4, available: true },
-    { id: 'd7', shopId: 's3', name: '拌面', price: 12, tags: [], desc: '咸得很，慎点', rating: 2, available: true },
-    { id: 'd8', shopId: 's3', name: '卤蛋', price: 2, tags: [], desc: '不新鲜，别点了', rating: 1, available: true },
-    { id: 'd9', shopId: 's4', name: '波霸奶茶', price: 13, tags: ['三分糖'], desc: '三分糖刚好', rating: 5, available: true },
-    { id: 'd10', shopId: 's4', name: '柠檬养乐多', price: 12, tags: [], desc: '', rating: null, available: true },
-  ],
+  shops: [],
+  dishes: [],
   orders: [],
-
-  /* 探店记录 —— 每去一次记一条，只往后加，不覆盖以前的。
-     date 是「什么时候去的」，不是录入时间；两者可能差很久（补录历史）。 */
-  visits: [
-    { id: 'v1', shopId: 's1', orderId: null, date: '2026-10-12', rating: 5,
-      text: '汤汁多，鸡肉嫩，好吃', tags: ['好吃'], images: [], createdAt: 1 },
-    { id: 'v2', shopId: 's1', orderId: null, date: '2026-09-28', rating: 4,
-      text: '送得有点慢', tags: [], images: [], createdAt: 2 },
-    { id: 'v3', shopId: 's3', orderId: null, date: '2026-10-05', rating: 2,
-      text: '卤蛋不新鲜，别再点了', tags: ['别再点'], images: [], createdAt: 3 },
-    { id: 'v4', shopId: 's3', orderId: null, date: '2026-08-19', rating: 3,
-      text: '蒸饺还行，拌面还是咸', tags: [], images: [], createdAt: 4 },
-  ],
-
+  visits: [],
   people: ['我', '她'],
 };
 
