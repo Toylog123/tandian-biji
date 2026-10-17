@@ -172,19 +172,66 @@ function emit() { changeHooks.forEach(fn => { try { fn(); } catch { /* ignore */
 const REMOTE = backend.configure(SUPABASE);
 
 /**
- * 云端比新的就用云端的。
+ * 键序无关的深比较。
  *
- * 先用本地数据把界面画出来，再悄悄拉一次云端——这样即使网络慢也不卡首屏。
- * 拉到不同的内容才重画，避免每次打开都闪一下。
+ * **不能直接 JSON.stringify 比字符串。** Postgres 的 jsonb 会把对象的键重排
+ * （先按长度、再按字节），同一份内容从云端拉回来键序已经跟本地存的不一样了，
+ * 直接比永远不相等——于是每次打开页面都会误判成「云端有更新」，
+ * 白白重画一次，还把「真的没变」和「别人改了」两种情况混为一谈。
  */
-if (REMOTE) {
-  backend.pull().then(remote => {
-    if (!remote) return;                       // 远端还没有数据，保留本地的
-    if (JSON.stringify(remote) === JSON.stringify(db)) return;
+function stableEqual(a, b) {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  if (typeof a !== 'object' || typeof b !== 'object') return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) return a.length === b.length && a.every((v, i) => stableEqual(v, b[i]));
+  const ka = Object.keys(a).sort();
+  const kb = Object.keys(b).sort();
+  return ka.length === kb.length && ka.every((k, i) => k === kb[i] && stableEqual(a[k], b[k]));
+}
+
+/* 同时只跑一次拉取，别让切前台和轮询撞在一起 */
+let syncing = false;
+
+/**
+ * 拉一次云端，确实有新内容才换本地。
+ *
+ * 两道保险：
+ * 1. 本地还有没推上去的改动就直接不换——否则防抖窗口里刚敲的字会被云端旧数据冲掉；
+ * 2. 内容确实一致就什么都不做——避免每次切回前台都闪一下。
+ */
+async function syncFromRemote() {
+  if (!REMOTE || syncing) return false;
+  if (backend.hasPending()) return false;       // 本地有改动没推完，先让推完
+  syncing = true;
+  try {
+    const remote = await backend.pull();
+    if (!remote) return false;                  // 远端还没数据，保留本地的
+    if (stableEqual(remote, db)) return false;  // 真的没变，别白重画
     db = migrate(remote);
     try { localStorage.setItem(KEY, JSON.stringify(db)); } catch { /* 存不下就算了，云端有 */ }
     emit();
+    return true;
+  } finally {
+    syncing = false;
+  }
+}
+
+if (REMOTE) {
+  syncFromRemote();
+
+  /* 切回前台就拉一次。
+     手机上 PWA 常挂着几天不关，只在启动时拉一次等于「换设备不同步」——
+     这条才是「不同设备同步」真正能用的关键。 */
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') syncFromRemote();
   });
+
+  /* 页面一直开着不切走的情况（比如挂在另一块屏上），靠低频轮询兜底。
+     30 秒一次，份量很轻，但别再调小了：拉的是整份 JSON。 */
+  setInterval(() => {
+    if (document.visibilityState === 'visible') syncFromRemote();
+  }, 30000);
 }
 
 /* ---------- 对外的操作接口 ---------- */

@@ -106,7 +106,11 @@ export async function flushNow(db) {
 }
 
 async function flush() {
-  if (!conf || inflight || !queued) return false;
+  if (!conf) return false;
+  // 上一次还没推完就 return 的话，新改动会一直卡在队列里没人管，
+  // 直到用户下次再敲一下键盘才顺带推出去。所以这里重新排一次。
+  if (inflight) { timer = setTimeout(flush, 900); return false; }
+  if (!queued) return false;
   const payload = queued;
   queued = null;
   inflight = true;
@@ -139,6 +143,15 @@ async function flush() {
     inflight = false;
   }
 }
+
+/**
+ * 本地还有没有没推上去的改动。
+ *
+ * 拉云端之前必须先问一句：有的话就别拿云端覆盖本地。
+ * 保存是防抖的（停手 900ms 才推），这个窗口里刚敲的那句话还没上云，
+ * 这时候来一次拉取就会用旧数据把它冲掉。
+ */
+export function hasPending() { return inflight || queued !== null; }
 
 function authHeaders() {
   return {
