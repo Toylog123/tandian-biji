@@ -1,6 +1,7 @@
 import { store, TIERS, today,
          cloudConfigured, enableSync, disconnectSync, syncNow } from './store.js';
 import { compressImage, usage } from './img.js';
+import { fromNow } from './dates.js';
 import * as cloud from './ghstore.js';
 
 /* 噜噜形象。
@@ -225,7 +226,7 @@ function shopCard(s) {
         </div>
         <div class="shop-meta">
           ${s.category ? `<span>${esc(s.category)}</span>` : ''}
-          ${last ? `<span>去过 ${times} 次 · 最近 ${prettyDate(last.date)}</span>` : ''}
+          ${last ? `<span title="最近一次：${esc(last.date || '')}">去过 ${times} 次 · 最近 ${fromNow(last.date)}</span>` : ''}
         </div>
         ${s.summary
           ? `<div class="shop-note">${esc(s.summary)}</div>`
@@ -235,12 +236,7 @@ function shopCard(s) {
     </button>`;
 }
 
-/** 'YYYY-MM-DD' -> '10/12'；今年的就省去年份 */
-function prettyDate(iso) {
-  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '';
-  const [y, m, d] = iso.split('-');
-  return (+y === new Date().getFullYear()) ? `${+m}/${+d}` : `${y.slice(2)}/${+m}/${+d}`;
-}
+/* 日期怎么显示给人看，在 js/dates.js。纯函数，能直接扔进 node 测。 */
 
 
 /* ============================================================
