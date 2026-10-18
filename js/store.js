@@ -87,8 +87,9 @@ function migrate(data) {
     if (!v.date)              v.date = fromTs(v.createdAt);
     if (!Array.isArray(v.tags))    v.tags = [];
     if (!Array.isArray(v.images)) v.images = [];
-    // 这次吃了什么菜。跟记录走，不挂在店上——同一家的不同次去，点的菜不一样
-    if (!Array.isArray(v.dishes)) v.dishes = [];
+    // 这次吃了什么菜。跟记录走，不挂在店上——同一家的不同次去，点的菜不一样。
+    // 上一版这里存的是纯菜名，normDishes 会收编成 { name, rating, text }。
+    v.dishes = normDishes(v.dishes);
     if (typeof v.text !== 'string') v.text = '';
     if (v.rating == null)      v.rating = 3;
     // 人均价格：没记是 null。跟「0 元」必须分得开，否则排序时混在一起
@@ -148,6 +149,48 @@ function normScore(x) {
   if (x === null || x === undefined || x === '') return null;
   const n = Math.round(Number(x));
   return (Number.isFinite(n) && n >= 1 && n <= 5) ? n : null;
+}
+
+/**
+ * 一道菜归一化成 { name, rating, text }。
+ *
+ * **旧数据里 dishes 就是一串菜名**（「辣子鸡」「肥肠」），
+ * 所以字符串必须收编成条目，不然老记录里的菜会整个读不出来。
+ * 老菜没有星级，那是事实而不是缺失——rating 留 null（= 还没打分），
+ * 跟 1 分（明确难吃）分得开，道理跟 normScore 一样。
+ *
+ * 返回 null 表示这一条该丢（没有菜名 / 类型不对）。
+ */
+function normDish(x) {
+  if (typeof x === 'string') {
+    const name = x.trim();
+    return name ? { name, rating: null, text: '' } : null;
+  }
+  if (!x || typeof x !== 'object') return null;
+  const name = String(x.name == null ? '' : x.name).trim();
+  if (!name) return null;
+  return {
+    name,
+    rating: normScore(x.rating),
+    text: typeof x.text === 'string' ? x.text.trim() : '',
+  };
+}
+
+/**
+ * 菜列表归一化：去空、裁掉没名字的、同名只留第一条。
+ *
+ * 同名去重是有意的：菜名是手打的，「辣子鸡」和「辣子鸡 」「辣子鸡」在
+ * 时间线上并排出现只会让人以为点了两道。留第一条是因为列表从上往下填，
+ * 第一次说「好吃」的那次才是第一次。
+ */
+function normDishes(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  list.forEach(x => {
+    const d = normDish(x);
+    if (d && !out.some(o => o.name === d.name)) out.push(d);
+  });
+  return out;
 }
 
 /** 时间戳 -> 'YYYY-MM-DD'；时间戳是秒（老示例数据）就乘 1000 */
@@ -393,7 +436,7 @@ export const store = {
     v.rating = Math.min(5, Math.max(1, Number(v.rating) || 3));
     if (!v.date) v.date = today();
     v.price = normPrice(v.price);
-    if (!Array.isArray(v.dishes)) v.dishes = [];
+    v.dishes = normDishes(v.dishes);
     db.visits.push(v);
     save(db, true);
     return v;
@@ -404,7 +447,7 @@ export const store = {
     if (!v) return null;
     Object.assign(v, patch);
     if ('price' in patch)   v.price = normPrice(v.price);
-    if ('dishes' in patch)  v.dishes = Array.isArray(v.dishes) ? v.dishes : [];
+    if ('dishes' in patch)  v.dishes = normDishes(v.dishes);
     save(db, true);
     return v;
   },

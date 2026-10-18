@@ -467,7 +467,12 @@ function visitSection(shop) {
             <button class="link-del" data-delvisit="${v.id}" title="删掉这条">删</button>
           </div>
           ${(v.dishes || []).length ? `
-            <div class="visit-dishes">${v.dishes.map(d => `<span class="dish-chip static">${esc(d)}</span>`).join('')}</div>` : ''}
+            <div class="visit-dishes">${v.dishes.map(d => `
+              <div class="dish-line">
+                <span class="dish-chip static">${esc(d.name)}</span>
+                ${miniStars(d.rating)}
+                ${d.text ? `<span class="dish-note-out">${esc(d.text)}</span>` : ''}
+              </div>`).join('')}</div>` : ''}
           ${v.text ? `<div class="visit-text">${esc(v.text)}</div>` : ''}
           ${(v.tags || []).map(t => `<span class="rev-tag">${esc(t)}</span>`).join('')}
           ${(v.images || []).length ? `
@@ -483,6 +488,20 @@ function visitSection(shop) {
 function stars(n) {
   return Array.from({ length: 5 }, (_, i) =>
     `<span class="${i < n ? 'on' : ''}">★</span>`).join('');
+}
+
+/**
+ * 菜品行上那排小星。
+ *
+ * 没打分（null）就整排不画——画一排灰星会被读成「打了 1 星」，
+ * 跟「没打过分」不是一回事。只画实心的，灰色的一概不画。
+ */
+function miniStars(n) {
+  const k = n == null ? 0 : Math.round(Number(n));
+  if (!Number.isFinite(k) || k <= 0) return '';
+  const v = Math.min(5, k);
+  return `<span class="mini-stars" aria-label="${v} 星">` +
+    Array.from({ length: v }, () => '<span>★</span>').join('') + '</span>';
 }
 
 /* ============================================================
@@ -559,17 +578,35 @@ const QUICK_TAGS = ['好吃', '量大', '踩雷', '别再点', '送得快', '有
 const MAX_VISIT_IMAGES = 9;
 
 /**
+ * 这家店以前点过的菜名，次数多的排前面。
+ *
+ * 记一次要重新打一遍「辣子鸡」纯属浪费——去第二次肯定还是那几样。
+ * visitsOf 已经按时间倒序，所以顺着抄一遍自然就是「最近吃的在前」。
+ * 同名只留一次，已在本次记录里的由调用处过滤。
+ */
+function dishSuggest(shopId) {
+  if (!shopId) return [];
+  const seen = new Set(), out = [];
+  store.visitsOf(shopId).forEach(v => (v.dishes || []).forEach(d => {
+    const n = d && d.name;
+    if (n && !seen.has(n)) { seen.add(n); out.push(n); }
+  }));
+  return out;
+}
+
+/**
  * 探店记录的表单区。
  *
  * 建店时的「第一次」和店里的「记一次 / 改这次」是同一套东西，
  * 抽出来是为了只写一遍。pfx 是 id 前缀——两处同时存在于页面上时不会撞。
+ * shopId 给了才会列「以前点过的菜」，建新店时传 null 就行。
  *
  * 返回 { el, read, touched }：
  *   read()   取当前填的值，交给 store
  *   touched  用户有没有动过这里。建店时用它判断该不该顺手建第一条记录：
  *             一个字段都没碰就只建店，不硬塞一条空记录进去。
  */
-function makeVisitFields(pfx, seed = {}) {
+function makeVisitFields(pfx, seed = {}, shopId = null) {
   const el = document.createElement('div');
   el.className = 'vfields';
 
@@ -582,6 +619,8 @@ function makeVisitFields(pfx, seed = {}) {
   const mark = () => { touched = true; };
 
   const seedDate = seed.date || today();
+  /* 以前在这家点过的菜，点一下就能加，省得每次重新打字 */
+  const suggest = dishSuggest(shopId);
 
   el.innerHTML = `
     <div class="field">
@@ -610,6 +649,7 @@ function makeVisitFields(pfx, seed = {}) {
         <input id="${pfx}Dish" placeholder="例：辣子鸡、肥肠、藕汤" autocomplete="off">
         <button type="button" class="btn-ghost btn-sm" id="${pfx}DishAdd">加上</button>
       </div>
+      <div class="dish-suggest" id="${pfx}DishSuggest"></div>
       <div class="dish-list" id="${pfx}Dishes"></div>
     </div>
 
@@ -641,10 +681,35 @@ function makeVisitFields(pfx, seed = {}) {
     q(`#${pfx}Word`).textContent = WORDS[rating];
   };
 
+  /* 一道菜 = 菜名 + 自己的星级 + 一句话。
+     星级可以不打（rating 是 null），那就不画星，别拿 1 星顶替——
+     「没打分」和「打了低分」是两回事，跟店总分一个道理。 */
   const paintDishes = () => {
     q(`#${pfx}Dishes`).innerHTML = dishes.map((d, i) => `
-      <span class="dish-chip">${esc(d)}<button type="button" data-rmdish="${i}" title="删掉">✕</button></span>
-    `).join('');
+      <div class="dish-row">
+        <div class="dish-row-head">
+          <span class="dish-name">${esc(d.name)}</span>
+          <span class="dish-stars">${[1, 2, 3, 4, 5].map(n => `
+            <button type="button" class="${d.rating != null && n <= d.rating ? 'on' : ''}"
+                    data-dstar="${n}" data-di="${i}" title="打 ${n} 星">★</button>`).join('')}</span>
+          <button type="button" class="dish-del" data-rmdish="${i}" title="删掉这道菜">✕</button>
+        </div>
+        <input class="dish-note" data-dnote="${i}" autocomplete="off"
+               placeholder="这道菜怎么样（可留空）" value="${esc(d.text || '')}">
+      </div>`).join('');
+    paintSuggest();
+  };
+
+  /* 以前点过的菜，点一下直接加进来。已经加过的不再列。 */
+  const paintSuggest = () => {
+    const box = q(`#${pfx}DishSuggest`);
+    if (!box) return;
+    const have = new Set(dishes.map(d => d.name));
+    const rest = suggest.filter(n => !have.has(n));
+    box.innerHTML = rest.length
+      ? `<span class="dim">以前点过</span>${rest.map(n =>
+          `<button type="button" class="tag-opt" data-suggest="${esc(n)}">${esc(n)}</button>`).join('')}`
+      : '';
   };
 
   const paintImgs = () => {
@@ -656,13 +721,19 @@ function makeVisitFields(pfx, seed = {}) {
     q(`#${pfx}Add`).hidden = images.length >= MAX_VISIT_IMAGES;
   };
 
-  const addDish = () => {
+  const addDish = (given) => {
     const inp = q(`#${pfx}Dish`);
+    const raw = given != null ? given : inp.value;
     // 顿号逗号换行都能分隔，顺手一次写几个也行
-    const parts = String(inp.value || '').split(/[,，、\n]/)
+    const parts = String(raw || '').split(/[,，、\n]/)
       .map(x => x.trim()).filter(Boolean);
     if (!parts.length) return;
-    parts.forEach(d => { if (!dishes.includes(d)) dishes.push(d); });
+    /* 重名的菜直接跳过：同一家去两次都点「辣子鸡」，
+       第二次再排一行出来看着像点了两道，星级还得分两份。 */
+    parts.forEach(n => {
+      if (dishes.some(d => d.name === n)) return;
+      dishes.push({ name: n, rating: null, text: '' });
+    });
     inp.value = '';
     mark();
     paintDishes();
@@ -675,6 +746,23 @@ function makeVisitFields(pfx, seed = {}) {
   el.addEventListener('click', e => {
     const s = e.target.closest('[data-star]');
     if (s) { rating = Number(s.dataset.star); mark(); return paintStars(); }
+
+    /* 菜品的星级。点同一个星再一下就取消打分——
+       跟「这家值不值」一个手感，不然想改成「没打过分」只能全删了重来。 */
+    const ds = e.target.closest('[data-dstar]');
+    if (ds) {
+      const d = dishes[Number(ds.dataset.di)];
+      if (d) {
+        const n = Number(ds.dataset.dstar);
+        d.rating = d.rating === n ? null : n;
+        mark();
+        paintDishes();
+      }
+      return;
+    }
+
+    const sg = e.target.closest('[data-suggest]');
+    if (sg) return addDish(sg.dataset.suggest);
 
     const g = e.target.closest('[data-tag]');
     if (g) {
@@ -713,6 +801,16 @@ function makeVisitFields(pfx, seed = {}) {
 
   ['Date', 'Price', 'Text'].forEach(k =>
     q(`#${pfx}${k}`).addEventListener('input', mark));
+
+  /* 菜品那句话只往内存里写，不重画列表。
+     重画会把整个列表的 innerHTML 换掉，正在输入的那个框被抽走，
+     打到一半就失焦——这是「边打字边丢焦点」最常见的成因。 */
+  el.addEventListener('input', e => {
+    const n = e.target.closest('[data-dnote]');
+    if (!n) return;
+    const d = dishes[Number(n.dataset.dnote)];
+    if (d) { d.text = e.target.value; mark(); }
+  });
 
   return {
     el,
@@ -769,7 +867,7 @@ function openVisitSheet(shopId, visitId) {
     tags: editing ? editing.tags : (last ? last.tags : []),
     images: editing ? editing.images : [],
     dishes: editing ? editing.dishes : [],
-  });
+  }, shopId);
   sheet.querySelector('.visit-slot').appendChild(vf.el);
 
   sheet.addEventListener('click', e => {

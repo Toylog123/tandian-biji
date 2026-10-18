@@ -434,8 +434,44 @@ input,select{font:inherit;color:inherit}
    (0,1,1) 的 .dish-add button,所以这里必须带 .sheet 提升优先级,
    否则「加上」按钮会抢走整行宽度、输入框被压成一条缝。 */
 .sheet .dish-add button{width:auto;flex:none;margin:0;padding:9px 16px;font-size:14px}
-.dish-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+/* 菜品列表现在是「一行一道菜」的块级布局，不再是一排小标签 */
+.dish-list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
 .dish-list:empty{display:none}
+
+/* 以前在这家点过的菜，点一下直接加进来 */
+.dish-suggest{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
+.dish-suggest:empty{display:none}
+.dish-suggest .tag-opt{font-size:12.5px;padding:5px 10px}
+
+/* 一道菜：菜名 + 自己的星级 + 一句话 */
+.dish-row{
+  border:1px solid var(--line);border-radius:12px;background:var(--card);
+  padding:7px 8px 8px;
+}
+.dish-row-head{display:flex;align-items:center;gap:6px}
+.dish-name{
+  flex:1 1 auto;min-width:0;font-size:14.5px;font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+/* 5 个独立按钮：点第 n 个打 n 星，再点一下取消打分 */
+.dish-stars{display:flex;flex:none;gap:0}
+.dish-stars button{
+  border:0;background:transparent;padding:4px 2px;cursor:pointer;
+  font-size:15px;line-height:1;color:#DFD7C6;
+}
+.dish-stars button.on{color:var(--yellow-deep)}
+.dish-del{
+  flex:none;border:0;background:transparent;cursor:pointer;
+  color:var(--dim);font-size:13px;line-height:1;padding:5px;
+  border-radius:50%;
+}
+.dish-del:active{color:var(--danger)}
+.dish-note{
+  width:100%;margin-top:6px;padding:7px 9px;
+  border:1px solid var(--line);border-radius:9px;
+  background:var(--bg);outline:none;font-size:13.5px;font-family:inherit;
+}
+.dish-note:focus{border-color:var(--yellow)}
 .dish-chip{
   display:inline-flex;align-items:center;gap:5px;
   font-size:12.5px;line-height:1;padding:6px 8px 6px 11px;border-radius:999px;
@@ -448,7 +484,11 @@ input,select{font:inherit;color:inherit}
 .dish-chip button:active{color:#5c4a00}
 /* 时间线上只展示，不能点着删 */
 .dish-chip.static{padding-right:11px}
-.visit-dishes{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}
+/* 时间线上的菜品：一行一道，菜名 + 星 + 一句话 */
+.visit-dishes{display:flex;flex-direction:column;gap:5px;margin:0 0 7px}
+.dish-line{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.mini-stars{display:inline-flex;gap:0;font-size:12px;line-height:1;color:var(--yellow-deep)}
+.dish-note-out{font-size:13px;color:var(--dim);flex:1 1 auto;min-width:0}
 
 /* 建店弹层里把「店」和「第一次」分开，不然会看成一大坨输入框 */
 .sheet-split{
