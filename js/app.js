@@ -60,9 +60,10 @@ const routes = {
 
 let current = { path: '/', params: [] };
 
-/* 管理页当前选中的店铺。放在模块作用域——parseHash() 每次都会返回新的
-   params 数组，写在 current.params 上会在下一次 render 时丢失。 */
-let manageShop = null;
+/** 店档案页的「✎ 编辑」是不是展开着。存店 id 而不是布尔：
+ *  布尔会让「在 A 店展开编辑 → 回首页 → 进 B 店」也展开着，
+ *  而编辑框是输入即存的，B 店的资料会被误改。 */
+let editingId = null;
 
 function parseHash() {
   const raw = location.hash.replace(/^#/, '') || '/';
@@ -77,6 +78,9 @@ function go(path) { location.hash = path; }
 
 function render() {
   current = parseHash();
+  /* 编辑面板只在当前这家店的页面上成立：换店或离开店档案页就收起，
+     免得回来时对着一个开着的输入框，直接把字打进了别的店。 */
+  if (editingId && current.params[0] !== editingId) editingId = null;
   const view = routes[current.path] || renderShops;
   document.getElementById('app').innerHTML = view(current.params);
   paintTabbar();
@@ -147,15 +151,28 @@ function renderShops() {
             ? (rated.length
                 ? `${shops.length} 家 · 最高 ${best} ★`
                 : `${shops.length} 家，都还没记过`)
-            : '还没有店，去「管理」里记一家'
+            : '还没有店，点右上角记一家'
         }</span>
       </div>
     </div>`;
 
+  /* 「记一家新店」放在档案这边而不是管理页——
+     管理只管同步，所有跟店有关的动作都在这儿。 */
+  const head = `
+    <div class="page-head">
+      ${mascot()}
+      <div>
+        <div class="shop-title">探店档案</div>
+        <div class="shop-sub">吃饭前翻一翻，躲开踩雷的</div>
+      </div>
+      ${syncChip()}
+      <button class="btn-primary btn-sm" data-addshop>＋ 探店</button>
+    </div>`;
+
   if (!shops.length) {
-    return banner + emptyState(
+    return head + banner + emptyState(
       '还没记过任何一家店', '吃完顺手记一条，下次就有底了',
-      '/manage', '去记店', LULU.cooking);
+      '', '＋ 探店', LULU.cooking, '', 'data-addshop');
   }
 
   // 每组内部：均分高的排前面
@@ -180,6 +197,7 @@ function renderShops() {
   ].join('');
 
   return `
+    ${head}
     ${banner}
     ${body}`;
 }
@@ -244,12 +262,60 @@ function renderShop([id]) {
             : `还没记过`}
         </div>
       </div>
+      <button class="btn-ghost btn-sm" data-toggleedit>${editingId === shop.id ? '收起' : '✎ 编辑'}</button>
     </div>
 
-    ${shop.summary ? `<div class="summary-box">${esc(shop.summary)}</div>` : ''}
+    ${shopVerdict(shop)}
     ${shop.note ? `<div class="notice">📌 ${esc(shop.note)}</div>` : ''}
 
+    ${editingId === shop.id ? shopEditor(shop) : ''}
+
     ${visitSection(shop)}`;
+}
+
+/**
+ * 「这家值不值」——手给的店铺总评分，跟每次去打的星是两回事。
+ *
+ * 均分是**算出来的**（所有探店记录的平均），容易被某一次的心情带偏；
+ * 总分是**你自己下的结论**，可以不跟均分一致。
+ * 所以两个都留着，不互相覆盖。没打过分显示 null，不占地方。
+ */
+function shopVerdict(shop) {
+  const score = shop.score;
+  const words = { 1: '不值', 2: '不太值', 3: '一般', 4: '值得再来', 5: '闭眼冲' };
+  return `
+    <section class="block verdict">
+      <h2 class="block-title">这家值不值 <span class="dim">你自己下的结论</span></h2>
+      <div class="verdict-row">
+        <div class="star-pick big">
+          ${[1, 2, 3, 4, 5].map(i =>
+            `<button data-score="${i}" class="${score && i <= score ? 'on' : ''}"
+                     aria-label="${i} 星">★</button>`).join('')}
+        </div>
+        <span class="verdict-word">${score ? `${words[score]}` : '还没打过分'}</span>
+      </div>
+      ${shop.summary
+        ? `<div class="summary-box inline">${esc(shop.summary)}</div>`
+        : `<div class="dim pad-sm">还没写一句话总结。</div>`}
+    </section>`;
+}
+
+/** 点「✎ 编辑」才出现的就地编辑区。改动输入即存，不点保存。 */
+function shopEditor(shop) {
+  return `
+    <section class="block">
+      <h2 class="block-title">改这家店 <span class="dim">输入即存</span></h2>
+      <div class="mng-row col">
+        <input class="line-edit" value="${esc(shop.name)}" data-shname="${shop.id}" placeholder="店名">
+        <input class="line-edit" value="${esc(shop.category || '')}"
+               data-shcat="${shop.id}" placeholder="分类：快餐简餐 / 烧烤 / 甜品">
+        <textarea class="line-edit summary-edit" rows="2" data-shsum="${shop.id}"
+          placeholder="一句话总结：这家到底行不行？下次靠这句想起来">${esc(shop.summary || '')}</textarea>
+        <input class="line-edit" value="${esc(shop.note || '')}" data-shnote="${shop.id}"
+               placeholder="备注：配送快 / 别点微辣">
+        <button class="link-del danger" data-delshop="${shop.id}">删这家店</button>
+      </div>
+    </section>`;
 }
 
 /**
@@ -414,65 +480,33 @@ function stars(n) {
 }
 
 /* ============================================================
-   页面 3：管理（只有我会用）
+   页面 3：管理（只管同步）
    ============================================================ */
 
 /**
- * 当前选中店铺的资料：店名、分类、总结、备注。
- * 都是「输入即存」，改完直接落库，不点保存。
+ * 管理页现在**只管一件事：云端同步**。
+ * 记店、给店铺评价、改资料全在「档案」那边——
+ * 跟店有关的动作都聚在一处，管理页不再分两半。
  */
-function shopSettings(shop) {
-  return `
-    <section class="block">
-      <h2 class="block-title">店铺设置 <span class="dim">改完自动保存</span></h2>
-      <div class="mng-row col">
-        <input class="line-edit" value="${esc(shop.name)}" data-shname="${shop.id}" placeholder="店名">
-        <input class="line-edit" value="${esc(shop.category || '')}"
-               data-shcat="${shop.id}" placeholder="分类：快餐简餐 / 烧烤 / 甜品">
-        <textarea class="line-edit summary-edit" rows="2" data-shsum="${shop.id}"
-          placeholder="一句话总结：这家到底行不行？下次靠这句想起来">${esc(shop.summary || '')}</textarea>
-        <input class="line-edit" value="${esc(shop.note || '')}" data-shnote="${shop.id}"
-               placeholder="备注：配送快 / 别点微辣">
-      </div>
-    </section>`;
-}
-
 function renderManage() {
-  const shops = store.shops();
-  if (!manageShop || !shops.some(s => s.id === manageShop)) manageShop = shops[0]?.id || '';
-  const tab = manageShop;
-
+  const u = usage();
   return `
     <div class="page-head">
       ${mascot()}
       <div>
         <div class="shop-title">管理</div>
-        <div class="shop-sub">记店、写总结、改设置，只有你会用到</div>
+        <div class="shop-sub">这里只管两台手机怎么共用数据</div>
       </div>
       ${syncChip()}
-      <button class="btn-primary btn-sm" data-addshop>＋ 记店</button>
     </div>
 
     ${cloudPanel()}
 
     <section class="block">
-      <h2 class="block-title">我的店 <span class="dim">${shops.length}</span></h2>
-      ${shops.map(s => {
-        const t = store.tierOf(s.id);
-        return `
-        <div class="mng-row ${s.id === tab ? 'on' : ''}">
-          <button class="mng-pick" data-pick="${s.id}">
-            <strong>${esc(s.name)}</strong>
-            <span class="dim">${t ? `${t.emoji} ${t.label} · ${store.avgRating(s.id)} ★ · ${store.visitsOf(s.id).length} 次` : '还没记过'}</span>
-          </button>
-          <button class="link-del" data-delshop="${s.id}">删</button>
-        </div>`;
-      }).join('') || `<div class="dim pad">还没有店</div>`}
-    </section>
-
-    ${tab && store.shop(tab) ? shopSettings(store.shop(tab)) : ''}
-
-    <div class="pad dim">已用 ${usage().usedMB} MB，还能再放大约 ${usage().approxLeft} 张照片。</div>`;
+      <h2 class="block-title">这台设备上的空间</h2>
+      <div class="pad dim">已用 ${u.usedMB} MB，还能再放大约 ${u.approxLeft} 张照片。
+        照片会自动压到 400px 再存。</div>
+    </section>`;
 }
 
 /**
@@ -692,14 +726,41 @@ function openForm(title, fields, onSubmit) {
    ============================================================ */
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-go],[data-pick],[data-delshop],[data-addshop],[data-visit],[data-delvisit],[data-vsort],[data-cloud-on],[data-cloud-off],[data-sync-now]');
+  const t = e.target.closest('[data-go],[data-delshop],[data-addshop],[data-visit],[data-delvisit],[data-toggleedit],[data-score],[data-vsort],[data-cloud-on],[data-cloud-off],[data-sync-now]');
   if (!t) return;
 
   if (t.dataset.go)        return go(t.dataset.go);
   if (t.dataset.visit)     return openVisitSheet(t.dataset.visit);
   if (t.dataset.delvisit)  return store.removeVisit(t.dataset.delvisit) ?? render();
-  if (t.dataset.pick)    { manageShop = t.dataset.pick; return render(); }
-  if (t.dataset.delshop)   return store.removeShop(t.dataset.delshop) ?? render();
+
+  if (t.hasAttribute('data-toggleedit')) {
+    const id = current.params[0];
+    if (!id) return;
+    editingId = editingId === id ? null : id;
+    return render();
+  }
+
+  /* 店铺总评分：点第 n 颗就是 n 分，再点同一颗取消。
+     「没打过分」是有意义的状态——它跟「打了低分」不是一回事，
+     所以能取消回去，不能用 0 代替。 */
+  if (t.dataset.score) {
+    const shop = store.shop(current.params[0]);
+    if (!shop) return;
+    const n = Number(t.dataset.score);
+    store.updateShop(shop.id, { score: shop.score === n ? null : n });
+    return render();
+  }
+
+  if (t.dataset.delshop) {
+    const s = store.shop(t.dataset.delshop);
+    if (!s) return;
+    const n = store.visitsOf(s.id).length;
+    if (!confirm(`删掉「${s.name}」？\n\n${n ? `这家店的 ${n} 条探店记录会一起没了，删不回来。` : ''}`)) return;
+    store.removeShop(s.id);
+    if (editingId === s.id) editingId = null;
+    toast('已删掉');
+    return go('/');
+  }
 
   if (t.hasAttribute('data-cloud-on')) {
     const inp = document.querySelector('#ghToken');
@@ -759,13 +820,20 @@ document.addEventListener('input', e => {
    公共片段 & 底部导航
    ============================================================ */
 
-function emptyState(title, sub, goPath, btnText, img, extra = '') {
+/**
+ * 空状态。btnAttr 可以换成别的动作（比如 data-addshop 直接开记店弹层），
+ * 传了就优先用它，不再按 data-go 跳。
+ */
+function emptyState(title, sub, goPath, btnText, img, extra = '', btnAttr = '') {
+  const btn = btnAttr
+    ? `<button class="btn-primary" ${btnAttr}>${esc(btnText)}</button>`
+    : `<button class="btn-primary" data-go="${goPath}">${esc(btnText)}</button>`;
   return `
     <div class="empty">
       ${img ? `<div class="empty-art"><img src="${img}" alt="" class="empty-img"></div>` : ''}
       <h2>${esc(title)}</h2>
       <p>${esc(sub)}</p>
-      <button class="btn-primary" data-go="${goPath}">${esc(btnText)}</button>
+      ${btn}
     </div>
     ${extra}`;
 }

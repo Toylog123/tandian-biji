@@ -33,6 +33,7 @@ const SEED = {
   orders: [],
   visits: [],
   people: ['我', '她'],
+  updatedAt: 0,
 };
 
 /**
@@ -63,6 +64,11 @@ function migrate(data) {
   if (!Array.isArray(data.dishes))    data.dishes = [];
   if (!Array.isArray(data.orders))    data.orders = [];
   if (!Array.isArray(data.people))    data.people = ['我', '她'];
+
+  /* 这一份数据最后一次改动的时间。用来判断云端和本地谁更新，
+     见 syncFromRemote —— 没有它，旧的云端会把新的本地盖掉。 */
+  if (!Number.isFinite(Number(data.updatedAt))) data.updatedAt = 0;
+  data.updatedAt = Number(data.updatedAt);
 
   /* reviews -> visits。
      以前叫「评价」，一个店一条；现在是「探店记录」，去一次记一条。
@@ -98,6 +104,14 @@ function migrate(data) {
     if (typeof s.link !== 'string')    s.link = '';
     if (typeof s.image !== 'string')   s.image = '';
     if (typeof s.summary !== 'string') s.summary = '';
+    // score = 「这家值不值」的手给总分。null 是「还没打过分」，
+    // 跟 1 分（明确不值）是两回事，所以不能用 0 兜底。
+    if (s.score != null) {
+      const n = Math.round(Number(s.score));
+      s.score = (Number.isFinite(n) && n >= 1 && n <= 5) ? n : null;
+    } else {
+      s.score = null;
+    }
   });
   return data;
 }
@@ -119,6 +133,19 @@ function normPrice(x) {
   const n = Number(x);
   if (!Number.isFinite(n) || n < 0) return null;
   return n;
+}
+
+/**
+ * 「这家值不值」的总评分归一化。
+ *
+ * 只接受 1~5 的整数，其余一律 null（= 还没打过分）。
+ * 不能拿 0 兜底：0 会被当成一个真实分数，而「没打过分」和「打了低分」
+ * 是两回事——前者是还没想好，后者是想过了。
+ */
+function normScore(x) {
+  if (x === null || x === undefined || x === '') return null;
+  const n = Math.round(Number(x));
+  return (Number.isFinite(n) && n >= 1 && n <= 5) ? n : null;
 }
 
 /** 时间戳 -> 'YYYY-MM-DD'；时间戳是秒（老示例数据）就乘 1000 */
@@ -147,6 +174,7 @@ function load() {
 }
 
 function save(db) {
+  db.updatedAt = Date.now();
   // 本地永远先写：即使云端挂了、断网了，这一台设备上的操作也不能丢
   try {
     localStorage.setItem(KEY, JSON.stringify(db));
@@ -195,9 +223,14 @@ let syncing = false;
 /**
  * 拉一次云端，确实有新内容才换本地。
  *
- * 两道保险：
+ * 三道保险：
  * 1. 本地还有没推上去的改动就直接不换——否则防抖窗口里刚敲的字会被云端旧数据冲掉；
- * 2. 内容确实一致就什么都不做——避免每次切回前台都闪一下。
+ * 2. 云端比本地旧就不换——**hasPending() 挡不住刷新页面**。
+ *    推送是防抖 90 秒的，用户在窗口里刷新或杀掉进程，排队中的那次推送
+ *    就随内存一起没了，localStorage 里是新的、云端还是旧的；
+ *    下次打开页面 hasPending() 又是 false，于是旧的云端把刚写的数据盖掉，
+ *    还会顺手把旧的写回 localStorage，改动就没了。靠 updatedAt 比时间才躲得开。
+ * 3. 内容确实一致就什么都不做——避免每次切回前台都闪一下。
  */
 async function syncFromRemote() {
   if (!CONFIGURED || !cloud.isRemote() || syncing) return false;
@@ -206,7 +239,11 @@ async function syncFromRemote() {
   try {
     const remote = await cloud.pull();
     if (!remote) return false;                  // 远端还没数据，保留本地的
+    remote.updatedAt = Number(remote.updatedAt) || 0;   // 老云端数据没这个字段
     if (stableEqual(remote, db)) return false;  // 真的没变，别白重画
+    /* 归一化之后才能比：云端老数据里没有 updatedAt，直接 Number(undefined)
+       得到 NaN，而 NaN < 任何值都是 false —— 拿它当保护等于没保护。 */
+    if (remote.updatedAt < (Number(db.updatedAt) || 0)) return false;
     db = migrate(remote);
     try { localStorage.setItem(KEY, JSON.stringify(db)); } catch { /* 存不下就算了，云端有 */ }
     emit();
@@ -217,6 +254,11 @@ async function syncFromRemote() {
 }
 
 if (CONFIGURED) {
+  /* 上次有改动没推完，页面就被刷新了或者进程被手机回收了：
+     内存里的队列已经没了，但改动还在本地。打开页面就补推一次，
+     别让它停在这一台设备上——另一台手机就再也看不到这些记录了。 */
+  if (cloud.isRemote() && cloud.hasStalePending()) cloud.pushNow(db);
+
   syncFromRemote();
 
   /* 切回前台就拉一次。
@@ -344,7 +386,8 @@ export const store = {
 
   /* 店铺增删改 */
   addShop(data) {
-    const shop = { id: uid('s'), createdAt: Date.now(), rating: 0, note: '', summary: '', category: '', ...data };
+    const shop = { id: uid('s'), createdAt: Date.now(), rating: 0, note: '', summary: '', category: '', score: null, ...data };
+    shop.score = normScore(shop.score);
     db.shops.push(shop);
     save(db);
     return shop;
@@ -353,6 +396,7 @@ export const store = {
     const s = this.shop(id);
     if (!s) return null;
     Object.assign(s, patch);
+    s.score = normScore(s.score);
     save(db);
     return s;
   },

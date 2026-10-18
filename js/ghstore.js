@@ -229,6 +229,20 @@ let timer = null;
 let queued = null;
 let inflight = false;
 
+/* 「本地有改动还没推上去」。
+   队列是内存里的，一刷新就没了 —— 所以这个状态必须落到 localStorage，
+   否则用户改完随手一刷新，改动就永远停在这台手机上，另一台看不到。
+   推送成功后才清掉。 */
+const PENDING_KEY = 'lulu_gh_pending';
+
+function markPending() { try { localStorage.setItem(PENDING_KEY, '1'); } catch { /* 存不下就算了 */ } }
+function clearPending() { try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ } }
+
+/** 上一次是不是没推完就被刷新/回收了 */
+export function hasStalePending() {
+  try { return localStorage.getItem(PENDING_KEY) === '1'; } catch { return false; }
+}
+
 /**
  * 推一份上去，**立即返回不等网络**。
  * 内部是合并节流：90 秒内的所有改动只产生一次提交。
@@ -236,9 +250,24 @@ let inflight = false;
 export function push(db) {
   if (!isRemote()) return Promise.resolve(false);
   queued = db;
+  markPending();
   clearTimeout(timer);
   timer = setTimeout(flush, PUSH_DEBOUNCE);
   return Promise.resolve(true);
+}
+
+/**
+ * 不等防抖，立刻推。
+ *
+ * 只在一种时候用：页面刚打开，发现上次有改动没推完（刷新或进程被回收
+ * 把内存里的队列冲掉了）。这时候已经在等用户操作了，没必要再压 90 秒。
+ */
+export function pushNow(db) {
+  if (!isRemote()) return Promise.resolve(false);
+  queued = db;
+  markPending();
+  clearTimeout(timer);
+  return flush();
 }
 
 /** 立刻把排队中的推出去（页面被关掉前调用） */
@@ -271,7 +300,7 @@ async function flush() {
 
     // 没变就别提交——否则光是打开页面就能刷出一堆空提交
     const sig = JSON.stringify([text, photos]);
-    if (sig === lastPushed) { setStatus('ok'); return true; }
+    if (sig === lastPushed) { clearPending(); setStatus('ok'); return true; }
 
     // 提交信息写得具体一点，将来翻 git log 能看懂
     const n = (Array.isArray(text.shops) ? text.shops.length : 0);
@@ -310,6 +339,7 @@ async function flush() {
 
     lastPushed = sig;
     lastPhotosSig = JSON.stringify(photos);
+    clearPending();
     setStatus('ok');
     return true;
   } catch (e) {
