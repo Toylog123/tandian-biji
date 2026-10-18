@@ -459,13 +459,15 @@ function visitSection(shop) {
       </div>` : ''}
 
       ${list.length ? list.map(v => `
-        <div class="visit">
+        <div class="visit" data-editvisit="${v.id}" role="button" tabindex="0">
           <div class="visit-head">
             ${ratingArt(v.rating, 'visit-mood', v.id)}
             <div class="rev-stars">${stars(v.rating)}</div>
             <div class="visit-date">${esc(v.date || '')}${priceOf(v) !== null ? ` · 人均 ¥${priceOf(v)}` : ''}</div>
-            <button class="link-del" data-delvisit="${v.id}">删</button>
+            <button class="link-del" data-delvisit="${v.id}" title="删掉这条">删</button>
           </div>
+          ${(v.dishes || []).length ? `
+            <div class="visit-dishes">${v.dishes.map(d => `<span class="dish-chip static">${esc(d)}</span>`).join('')}</div>` : ''}
           ${v.text ? `<div class="visit-text">${esc(v.text)}</div>` : ''}
           ${(v.tags || []).map(t => `<span class="rev-tag">${esc(t)}</span>`).join('')}
           ${(v.images || []).length ? `
@@ -556,15 +558,192 @@ const QUICK_TAGS = ['好吃', '量大', '踩雷', '别再点', '送得快', '有
 /** 一条探店记录最多几张照片。每张压到 400px 约 30~45KB，9 张也就三百来 KB。 */
 const MAX_VISIT_IMAGES = 9;
 
-function openVisitSheet(shopId) {
+/**
+ * 探店记录的表单区。
+ *
+ * 建店时的「第一次」和店里的「记一次 / 改这次」是同一套东西，
+ * 抽出来是为了只写一遍。pfx 是 id 前缀——两处同时存在于页面上时不会撞。
+ *
+ * 返回 { el, read, touched }：
+ *   read()   取当前填的值，交给 store
+ *   touched  用户有没有动过这里。建店时用它判断该不该顺手建第一条记录：
+ *             一个字段都没碰就只建店，不硬塞一条空记录进去。
+ */
+function makeVisitFields(pfx, seed = {}) {
+  const el = document.createElement('div');
+  el.className = 'vfields';
+
+  const WORDS = { 1: '难下的咽', 2: '不太行', 3: '一般般', 4: '还不错', 5: '很好吃' };
+  let rating = seed.rating != null ? Number(seed.rating) : 4;
+  let images = Array.isArray(seed.images) ? seed.images.slice() : [];
+  let dishes = Array.isArray(seed.dishes) ? seed.dishes.slice() : [];
+  const picked = new Set(Array.isArray(seed.tags) ? seed.tags : []);
+  let touched = false;
+  const mark = () => { touched = true; };
+
+  const seedDate = seed.date || today();
+
+  el.innerHTML = `
+    <div class="field">
+      <label>什么时候去的</label>
+      <input id="${pfx}Date" type="date" value="${esc(seedDate)}" max="${today()}">
+    </div>
+
+    <div class="field">
+      <label>人均花了多少（可留空）</label>
+      <input id="${pfx}Price" type="number" step="1" min="0" inputmode="decimal"
+             placeholder="例：32"
+             value="${seed.price != null ? esc(String(seed.price)) : ''}">
+    </div>
+
+    <div class="field">
+      <label>这次吃得怎么样</label>
+      <div class="star-pick" id="${pfx}Stars">
+        ${[1, 2, 3, 4, 5].map(i => `<button type="button" data-star="${i}" class="${i <= rating ? 'on' : ''}">★</button>`).join('')}
+      </div>
+      <div class="star-word" id="${pfx}Word">${WORDS[rating]}</div>
+    </div>
+
+    <div class="field">
+      <label>这次吃了什么（可留空）</label>
+      <div class="dish-add">
+        <input id="${pfx}Dish" placeholder="例：辣子鸡、肥肠、藕汤" autocomplete="off">
+        <button type="button" class="btn-ghost btn-sm" id="${pfx}DishAdd">加上</button>
+      </div>
+      <div class="dish-list" id="${pfx}Dishes"></div>
+    </div>
+
+    <div class="field">
+      <label>一句话（下次就靠这句想起来）</label>
+      <textarea id="${pfx}Text" rows="2" placeholder="例：汤很足，鸡肉不柴。下次还来。">${esc(seed.text || '')}</textarea>
+    </div>
+
+    <div class="field">
+      <label>快速标签（可多选）</label>
+      <div class="tag-pick" id="${pfx}Tags">
+        ${QUICK_TAGS.map(t => `<button type="button" class="tag-opt ${picked.has(t) ? 'on' : ''}" data-tag="${t}">${t}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="field">
+      <label>照片（最多 ${MAX_VISIT_IMAGES} 张，会自动压小）</label>
+      <div class="visit-pick" id="${pfx}Imgs"></div>
+      <!-- 必须是 label：系统选图框是让 <label for="picInput"> 触发的。
+           这里要是写成 <button>，点它只会登记回调，照片库根本不会弹出来。 -->
+      <label class="link-btn" for="picInput" id="${pfx}Add">＋ 再加一张</label>
+    </div>`;
+
+  const q = sel => el.querySelector(sel);
+
+  const paintStars = () => {
+    el.querySelectorAll('[data-star]').forEach(b =>
+      b.classList.toggle('on', Number(b.dataset.star) <= rating));
+    q(`#${pfx}Word`).textContent = WORDS[rating];
+  };
+
+  const paintDishes = () => {
+    q(`#${pfx}Dishes`).innerHTML = dishes.map((d, i) => `
+      <span class="dish-chip">${esc(d)}<button type="button" data-rmdish="${i}" title="删掉">✕</button></span>
+    `).join('');
+  };
+
+  const paintImgs = () => {
+    q(`#${pfx}Imgs`).innerHTML = images.map((src, i) => `
+      <div class="vimg">
+        <img src="${esc(src)}" alt="">
+        <button type="button" data-rmimg="${i}" title="删掉">✕</button>
+      </div>`).join('');
+    q(`#${pfx}Add`).hidden = images.length >= MAX_VISIT_IMAGES;
+  };
+
+  const addDish = () => {
+    const inp = q(`#${pfx}Dish`);
+    // 顿号逗号换行都能分隔，顺手一次写几个也行
+    const parts = String(inp.value || '').split(/[,，、\n]/)
+      .map(x => x.trim()).filter(Boolean);
+    if (!parts.length) return;
+    parts.forEach(d => { if (!dishes.includes(d)) dishes.push(d); });
+    inp.value = '';
+    mark();
+    paintDishes();
+  };
+
+  paintStars();
+  paintDishes();
+  paintImgs();
+
+  el.addEventListener('click', e => {
+    const s = e.target.closest('[data-star]');
+    if (s) { rating = Number(s.dataset.star); mark(); return paintStars(); }
+
+    const g = e.target.closest('[data-tag]');
+    if (g) {
+      const t = g.dataset.tag;
+      picked.has(t) ? picked.delete(t) : picked.add(t);
+      g.classList.toggle('on', picked.has(t));
+      return mark();
+    }
+
+    const rd = e.target.closest('[data-rmdish]');
+    if (rd) { dishes.splice(Number(rd.dataset.rmdish), 1); return paintDishes(); }
+
+    const ri = e.target.closest('[data-rmimg]');
+    if (ri) { images.splice(Number(ri.dataset.rmimg), 1); return paintImgs(); }
+
+    if (e.target.id === `${pfx}DishAdd`) return addDish();
+
+    if (e.target.id === `${pfx}Add`) {
+      if (images.length >= MAX_VISIT_IMAGES) return;
+      return pickImage(async r => {
+        if (!r) return;
+        if (!r.ok) return toast(r.error, 3000);
+        images.push(r.url);
+        mark();
+        paintImgs();
+      });
+    }
+  });
+
+  /* 菜品框里回车就是「加上」，不用去够按钮 */
+  q(`#${pfx}Dish`).addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    addDish();
+  });
+
+  ['Date', 'Price', 'Text'].forEach(k =>
+    q(`#${pfx}${k}`).addEventListener('input', mark));
+
+  return {
+    el,
+    touched: () => touched,
+    read: () => ({
+      date: q(`#${pfx}Date`).value || today(),
+      rating,
+      // 原样交给 store.normPrice：空串 -> null（没填），"0" -> 0（真的是 0 元）。
+      // 这里要是写成 Number(x) || 0，空着也会存成 0，界面上就显示成「人均 ¥0」。
+      price: q(`#${pfx}Price`).value,
+      text: q(`#${pfx}Text`).value.trim(),
+      tags: [...picked],
+      images,
+      dishes,
+    }),
+  };
+}
+
+/**
+ * 店里的「记一次」/「改这条」。
+ * 传 visitId 就是改那一条，不传就是新记一条。
+ */
+function openVisitSheet(shopId, visitId) {
   const shop = store.shop(shopId);
   if (!shop) return;
 
-  const last = store.lastVisitOf(shopId);
-  // 默认填上次的分：多半这次感受差不多，少点一下。但日期要重置成今天。
-  let rating = last ? last.rating : 4;
-  let images = [];
-  const picked = new Set(last ? last.tags : []);
+  const editing = visitId ? store.visit(visitId) : null;
+  if (visitId && !editing) return;
+
+  /* 新增时默认填上次的分：多半这次感受差不多，少点一下。日期重置成今天。 */
+  const last = editing || store.lastVisitOf(shopId);
 
   const sheet = document.createElement('div');
   sheet.className = 'sheet-mask';
@@ -572,115 +751,34 @@ function openVisitSheet(shopId) {
     <div class="sheet">
       <div class="sheet-head">
         ${mascot(LULU.face, 'sheet-mascot')}
-        <div><div class="sheet-name">在「${esc(shop.name)}」记一次</div>
-        <div class="dim">去一次记一条，以前的不动</div></div>
+        <div><div class="sheet-name">${editing ? '改这条记录' : `在「${esc(shop.name)}」记一次`}</div>
+        <div class="dim">${editing ? '改了点保存就行' : '去一次记一条，以前的不动'}</div></div>
       </div>
-
-      <div class="field">
-        <label>什么时候去的</label>
-        <input id="vsDate" type="date" value="${today()}" max="${today()}">
-      </div>
-
-      <div class="field">
-        <label>人均花了多少（可留空）</label>
-        <input id="vsPrice" type="number" step="1" min="0" inputmode="decimal"
-               placeholder="例：32" value="${last && priceOf(last) !== null ? priceOf(last) : ''}">
-      </div>
-
-      <div class="field">
-        <label>这次吃得怎么样</label>
-        <div class="star-pick" id="starPick">
-          ${[1, 2, 3, 4, 5].map(i => `<button data-star="${i}" class="${i <= rating ? 'on' : ''}">★</button>`).join('')}
-        </div>
-        <div class="star-word" id="starWord">还不错</div>
-      </div>
-
-      <div class="field">
-        <label>快速标签（可多选）</label>
-        <div class="tag-pick" id="tagPick">
-          ${QUICK_TAGS.map(t => `<button class="tag-opt ${picked.has(t) ? 'on' : ''}" data-tag="${t}">${t}</button>`).join('')}
-        </div>
-      </div>
-
-      <div class="field">
-        <label>一句话（下次就靠这句想起来）</label>
-        <textarea id="vsText" rows="2" placeholder="例：汤很足，鸡肉不柴。下次还来。"></textarea>
-      </div>
-
-      <div class="field">
-        <label>照片（最多 ${MAX_VISIT_IMAGES} 张，会自动压小）</label>
-        <div class="visit-pick" id="vsImgs"></div>
-        <!-- 必须是 label：系统选图框是让 <label for="picInput"> 触发的。
-             这里要是写成 <button>，点它只会登记回调，照片库根本不会弹出来。 -->
-        <label class="link-btn" for="picInput" id="vsAdd">＋ 再加一张</label>
-      </div>
-
-      <button class="btn-primary" id="confirmVisit">保存这条记录</button>
+      <div class="visit-slot"></div>
+      <button class="btn-primary" id="confirmVisit">${editing ? '保存修改' : '保存这条记录'}</button>
       <button class="btn-ghost" id="cancelVisit">取消</button>
     </div>`;
 
   document.body.appendChild(sheet);
 
-  const WORDS = { 1: '难以下咽', 2: '不太行', 3: '一般般', 4: '还不错', 5: '很好吃' };
-
-  const paintStars = () => {
-    sheet.querySelectorAll('[data-star]').forEach(b =>
-      b.classList.toggle('on', Number(b.dataset.star) <= rating));
-    sheet.querySelector('#starWord').textContent = WORDS[rating];
-  };
-
-  const gallery = sheet.querySelector('#vsImgs');
-  const addBtn = sheet.querySelector('#vsAdd');
-  const paintImgs = () => {
-    gallery.innerHTML = images.map((src, i) => `
-      <div class="vimg">
-        <img src="${esc(src)}" alt="">
-        <button data-rmimg="${i}" title="删掉">✕</button>
-      </div>`).join('');
-    addBtn.hidden = images.length >= MAX_VISIT_IMAGES;
-  };
-  paintImgs();
+  const vf = makeVisitFields('vs', {
+    date: editing ? editing.date : today(),
+    rating: last ? last.rating : 4,
+    price: last ? priceOf(last) : null,
+    text: editing ? editing.text : '',
+    tags: editing ? editing.tags : (last ? last.tags : []),
+    images: editing ? editing.images : [],
+    dishes: editing ? editing.dishes : [],
+  });
+  sheet.querySelector('.visit-slot').appendChild(vf.el);
 
   sheet.addEventListener('click', e => {
     if (e.target === sheet || e.target.id === 'cancelVisit') return sheet.remove();
 
-    const s = e.target.closest('[data-star]');
-    if (s) { rating = Number(s.dataset.star); return paintStars(); }
-
-    const g = e.target.closest('[data-tag]');
-    if (g) {
-      const t = g.dataset.tag;
-      picked.has(t) ? picked.delete(t) : picked.add(t);
-      g.classList.toggle('on', picked.has(t));
-      return;
-    }
-
-    const rm = e.target.closest('[data-rmimg]');
-    if (rm) { images.splice(Number(rm.dataset.rmimg), 1); return paintImgs(); }
-
-    if (e.target.id === 'vsAdd') {
-      if (images.length >= MAX_VISIT_IMAGES) return;
-      return pickImage(async r => {
-        if (!r) return;
-        if (!r.ok) return toast(r.error, 3000);
-        images.push(r.url);
-        paintImgs();
-      });
-    }
-
     if (e.target.id === 'confirmVisit') {
       try {
-        store.addVisit({
-          shopId,
-          date: sheet.querySelector('#vsDate').value || today(),
-          rating,
-          // 原样交给 store.normPrice：空串 -> null（没填），"0" -> 0（真的是 0 元）。
-          // 这里要是写成 Number(x) || 0，空着也会存成 0，界面上就显示成「人均 ¥0」。
-          price: sheet.querySelector('#vsPrice').value,
-          text: sheet.querySelector('#vsText').value.trim(),
-          tags: [...picked],
-          images,
-        });
+        if (editing) store.updateVisit(editing.id, vf.read());
+        else store.addVisit({ shopId, ...vf.read() });
         sheet.remove();
         render();
       } catch (err) {
@@ -688,54 +786,101 @@ function openVisitSheet(shopId) {
       }
     }
   });
-
-  paintStars();
 }
 
 
 /* ---------- 弹层：记店 / 记菜 ---------- */
 
-function openForm(title, fields, onSubmit) {
+/**
+ * 「＋ 探店」：建店 + 第一条记录，一步做完。
+ *
+ * 刚吃到一家，想记的时候人就在店里——让他先建店、再点「记一次」、再填一遍店名，
+ * 中间那一步纯属折磨。所以第一次的情况直接跟着这个弹层一起填。
+ * 记录区一个字段都没碰的话，就只建店，不塞一条空记录进去。
+ */
+function openShopSheet() {
   const sheet = document.createElement('div');
   sheet.className = 'sheet-mask';
   sheet.innerHTML = `
     <div class="sheet">
-      <div class="sheet-head"><div class="sheet-name">${esc(title)}</div></div>
-      ${fields.map(f => `
-        <div class="field">
-          <label>${esc(f.label)}</label>
-          ${f.options
-            ? `<select id="f_${f.key}">${f.options.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('')}</select>`
-            : `<input id="f_${f.key}" placeholder="${esc(f.ph || '')}" type="${f.type || 'text'}">`}
-        </div>`).join('')}
-      <button class="btn-primary" id="formOk">保存</button>
-      <button class="btn-ghost" id="formCancel">取消</button>
+      <div class="sheet-head">
+        ${mascot(LULU.cooking, 'sheet-mascot')}
+        <div><div class="sheet-name">记一家新店</div>
+        <div class="dim">刚吃到的那家，顺手记下来</div></div>
+      </div>
+
+      <div class="field">
+        <label>店名</label>
+        <input id="nsName" placeholder="例：巷口黄焖鸡">
+      </div>
+
+      <div class="field">
+        <label>分类（可留空）</label>
+        <input id="nsCat" placeholder="例：快餐简餐">
+      </div>
+
+      <div class="field">
+        <label>备注（可留空）</label>
+        <input id="nsNote" placeholder="例：配送快 / 别点微辣">
+      </div>
+
+      <div class="sheet-split">第一次去的情况</div>
+      <div class="hint">不填也行，那就只建个空档案，以后再补。</div>
+      <div class="visit-slot"></div>
+
+      <button class="btn-primary" id="nsOk">保存</button>
+      <button class="btn-ghost" id="nsCancel">取消</button>
     </div>`;
 
   document.body.appendChild(sheet);
+
+  const vf = makeVisitFields('nv', { rating: 4 });
+  sheet.querySelector('.visit-slot').appendChild(vf.el);
+
   sheet.addEventListener('click', e => {
-    if (e.target === sheet || e.target.id === 'formCancel') return sheet.remove();
-    if (e.target.id === 'formOk') {
-      const data = {};
-      fields.forEach(f => { data[f.key] = sheet.querySelector('#f_' + f.key).value.trim(); });
-      onSubmit(data);
-      sheet.remove();
-      render();
+    if (e.target === sheet || e.target.id === 'nsCancel') return sheet.remove();
+
+    if (e.target.id === 'nsOk') {
+      const name = sheet.querySelector('#nsName').value.trim();
+      if (!name) return toast('先填店名');
+
+      try {
+        const shop = store.addShop({
+          name,
+          category: sheet.querySelector('#nsCat').value.trim(),
+          note: sheet.querySelector('#nsNote').value.trim(),
+        });
+        /* 记录区被碰过才建记录。用户只想先把店存下来的时候不该被塞一条空数据。 */
+        if (vf.touched()) store.addVisit({ shopId: shop.id, ...vf.read() });
+        sheet.remove();
+        render();
+        if (vf.touched()) toast(`「${name}」记好了`);
+      } catch (err) {
+        toast(err.message, 4500);
+      }
     }
   });
 }
 
-/* ---------- 弹层：记菜（自带图片槽，所以没用通用的 openForm） ---------- *//* ============================================================
+/* ============================================================
    事件绑定
    ============================================================ */
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-go],[data-delshop],[data-addshop],[data-visit],[data-delvisit],[data-toggleedit],[data-score],[data-vsort],[data-cloud-on],[data-cloud-off],[data-sync-now]');
+  const t = e.target.closest('[data-go],[data-delshop],[data-addshop],[data-visit],[data-delvisit],[data-editvisit],[data-toggleedit],[data-score],[data-vsort],[data-cloud-on],[data-cloud-off],[data-sync-now]');
   if (!t) return;
 
   if (t.dataset.go)        return go(t.dataset.go);
   if (t.dataset.visit)     return openVisitSheet(t.dataset.visit);
-  if (t.dataset.delvisit)  return store.removeVisit(t.dataset.delvisit) ?? render();
+  /* 删要在编辑前面：记录行整体可点，「删」在行里面，
+     万一两个属性落到同一个元素上，先命中的一定得是删除。 */
+  if (t.dataset.delvisit) {
+    const v = store.visit(t.dataset.delvisit);
+    if (!v) return;
+    if (!confirm(`删掉 ${v.date} 这条记录？删不回来。`)) return;
+    return store.removeVisit(t.dataset.delvisit) ?? render();
+  }
+  if (t.dataset.editvisit) return openVisitSheet(current.params[0], t.dataset.editvisit);
 
   if (t.hasAttribute('data-toggleedit')) {
     const id = current.params[0];
@@ -793,11 +938,7 @@ document.addEventListener('click', e => {
   }
 
   if (t.hasAttribute('data-addshop')) {
-    return openForm('记一家新店', [
-      { key: 'name',     label: '店名',     ph: '例：巷口黄焖鸡' },
-      { key: 'category', label: '分类',     ph: '例：快餐简餐' },
-      { key: 'note',     label: '备注',     ph: '例：配送快 / 别点微辣' },
-    ], d => store.addShop(d));
+    return openShopSheet();
   }
 });
 
@@ -818,6 +959,21 @@ document.addEventListener('input', e => {
     if (t.dataset.shsum)  store.updateShop(t.dataset.shsum,  { summary: t.value });
     if (t.dataset.shnote) store.updateShop(t.dataset.shnote, { note: t.value });
   }, 400));
+});
+
+/* 记录行现在是 role="button"，键盘得能走通。
+   只认 Enter / 空格——方向键留给正常滚动，不然没法上下看记录。
+
+   必须要求 e.target 就是记录行本身：行里还嵌着「删」按钮，
+   它也在这行的 tab 序列里。要是只看 closest('[data-editvisit]')，
+   在「删」上按回车会被这里的 preventDefault 吃掉按钮的原生激活，
+   删不掉，反倒把编辑弹层开起来了。 */
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const t = e.target.closest && e.target.closest('[data-editvisit]');
+  if (!t || e.target !== t) return;
+  e.preventDefault();
+  openVisitSheet(current.params[0], t.dataset.editvisit);
 });
 
 /* ============================================================

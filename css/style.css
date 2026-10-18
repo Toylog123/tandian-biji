@@ -395,7 +395,14 @@ input,select{font:inherit;color:inherit}
   margin-bottom:10px;box-shadow:var(--sh-1);
   /* 左侧一道竖线串起时间线 */
   border-left:3px solid var(--yellow-wash);
+  /* 整行点得开看和改 */
+  cursor:pointer;
+  /* 星级动图是持续在解码的，屏幕外的不该还在算。
+     不支持的浏览器直接忽略这两条，不会出问题。 */
+  content-visibility:auto;contain-intrinsic-size:auto 76px;
 }
+.visit:active{background:#FFFCF0}
+.visit:focus-visible{outline:2px solid var(--yellow);outline-offset:2px}
 .visit-head{
   display:flex;align-items:center;gap:9px;margin-bottom:5px;flex-wrap:wrap;
 }
@@ -417,6 +424,39 @@ input,select{font:inherit;color:inherit}
 /* 弹层里的选图区 */
 .visit-pick{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
 .vimg{position:relative;width:74px;height:74px}
+
+/* ---------- 这次吃了什么 ---------- */
+/* .btn-ghost 通用的 margin:0 auto 在 flex 行里会把剩余空间全吸走，
+   输入框直接被挤成一条缝。按钮在这里必须把外边距和伸缩都关掉。 */
+.dish-add{display:flex;gap:8px;align-items:center}
+.dish-add input{flex:1 1 auto;min-width:0;width:auto}
+/* 注意:.sheet .btn-ghost 有 width:100%,特异性 (0,2,0) 会压过
+   (0,1,1) 的 .dish-add button,所以这里必须带 .sheet 提升优先级,
+   否则「加上」按钮会抢走整行宽度、输入框被压成一条缝。 */
+.sheet .dish-add button{width:auto;flex:none;margin:0;padding:9px 16px;font-size:14px}
+.dish-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.dish-list:empty{display:none}
+.dish-chip{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:12.5px;line-height:1;padding:6px 8px 6px 11px;border-radius:999px;
+  background:var(--yellow-wash);color:#6b5300;font-weight:600;
+}
+.dish-chip button{
+  border:0;background:transparent;color:#9c7d12;font-size:13px;
+  line-height:1;padding:0 2px;cursor:pointer;border-radius:50%;
+}
+.dish-chip button:active{color:#5c4a00}
+/* 时间线上只展示，不能点着删 */
+.dish-chip.static{padding-right:11px}
+.visit-dishes{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}
+
+/* 建店弹层里把「店」和「第一次」分开，不然会看成一大坨输入框 */
+.sheet-split{
+  font-size:12px;color:var(--dim);font-weight:600;letter-spacing:.3px;
+  margin:20px 0 2px;padding-top:14px;border-top:1px dashed var(--line,#E8E0D0);
+}
+.hint{font-size:11.5px;color:var(--dim);margin-bottom:4px}
+.vfields .field:first-child{margin-top:10px}
 .vimg img{
   width:100%;height:100%;object-fit:cover;border-radius:11px;display:block;
   background:#F5EFE2;

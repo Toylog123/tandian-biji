@@ -87,6 +87,8 @@ function migrate(data) {
     if (!v.date)              v.date = fromTs(v.createdAt);
     if (!Array.isArray(v.tags))    v.tags = [];
     if (!Array.isArray(v.images)) v.images = [];
+    // 这次吃了什么菜。跟记录走，不挂在店上——同一家的不同次去，点的菜不一样
+    if (!Array.isArray(v.dishes)) v.dishes = [];
     if (typeof v.text !== 'string') v.text = '';
     if (v.rating == null)      v.rating = 3;
     // 人均价格：没记是 null。跟「0 元」必须分得开，否则排序时混在一起
@@ -343,6 +345,9 @@ export const store = {
 
   /* ---------- 探店记录 ---------- */
 
+  /** 按 id 取一条记录。点开改一条的时候用。 */
+  visit(id) { return db.visits.find(v => v.id === id) || null; },
+
   /** 这家店的全部记录，按去的时间倒序（没填日期的沉底） */
   visitsOf(shopId) {
     return db.visits
@@ -381,12 +386,14 @@ export const store = {
       text: '',
       tags: [],
       images: [],
+      dishes: [],
       createdAt: Date.now(),
       ...data,
     };
     v.rating = Math.min(5, Math.max(1, Number(v.rating) || 3));
     if (!v.date) v.date = today();
     v.price = normPrice(v.price);
+    if (!Array.isArray(v.dishes)) v.dishes = [];
     db.visits.push(v);
     save(db, true);
     return v;
@@ -396,6 +403,8 @@ export const store = {
     const v = db.visits.find(x => x.id === id);
     if (!v) return null;
     Object.assign(v, patch);
+    if ('price' in patch)   v.price = normPrice(v.price);
+    if ('dishes' in patch)  v.dishes = Array.isArray(v.dishes) ? v.dishes : [];
     save(db, true);
     return v;
   },
