@@ -173,9 +173,17 @@ function load() {
   return structuredClone(SEED);
 }
 
-function save(db) {
+/**
+ * 存一份。
+ *
+ * immediate = true 表示这是一次「我操作完了」的明确动作（记一条、建一家、
+ * 删一条），马上推到云端；false 是连续输入（比如在编辑框里打字），
+ * 交给云端层合并，不然每敲一个字都要提交一次。
+ *
+ * 本地永远先写：即使云端挂了、断网了，这一台设备上的操作也不能丢
+ */
+function save(db, immediate) {
   db.updatedAt = Date.now();
-  // 本地永远先写：即使云端挂了、断网了，这一台设备上的操作也不能丢
   try {
     localStorage.setItem(KEY, JSON.stringify(db));
   } catch (e) {
@@ -186,7 +194,7 @@ function save(db) {
     }
     throw e;
   }
-  if (cloud.isRemote()) cloud.push(db);
+  if (cloud.isRemote()) cloud.push(db, immediate);
   return db;
 }
 
@@ -296,8 +304,21 @@ export function disconnectSync() {
   cloud.resetCache();
 }
 
-/** 手动立刻同步一次（「立即同步」按钮） */
-export function syncNow() { return syncFromRemote(); }
+/**
+ * 手动「立即同步」：**先把本地的推上去，再拉云端的**。
+ *
+ * 之前这里只调 syncFromRemote()（纯拉取），于是有未推送改动时
+ * hasPending() 直接返回 false，按钮弹一句「这次没变化」——
+ * 用户以为同步完了，其实他自己的东西还停在这台手机上。
+ * 一个叫「立即同步」的按钮不做推送，是骗人的。
+ */
+export async function syncNow() {
+  const pushed = await cloud.flushNow(db);
+  /* 推成功了云端就是最新的，这时拉回来通常一致，不会白重画。
+     万一另一台设备在这期间也写了，就靠 updatedAt 决定谁覆盖谁。 */
+  const pulled = await syncFromRemote();
+  return pushed || pulled;
+}
 
 /** config.js 里配了仓库地址吗（跟「现在有没有在同步」是两回事） */
 export const cloudConfigured = CONFIGURED;
@@ -367,7 +388,7 @@ export const store = {
     if (!v.date) v.date = today();
     v.price = normPrice(v.price);
     db.visits.push(v);
-    save(db);
+    save(db, true);
     return v;
   },
 
@@ -375,13 +396,13 @@ export const store = {
     const v = db.visits.find(x => x.id === id);
     if (!v) return null;
     Object.assign(v, patch);
-    save(db);
+    save(db, true);
     return v;
   },
 
   removeVisit(id) {
     db.visits = db.visits.filter(v => v.id !== id);
-    save(db);
+    save(db, true);
   },
 
   /* 店铺增删改 */
@@ -389,7 +410,7 @@ export const store = {
     const shop = { id: uid('s'), createdAt: Date.now(), rating: 0, note: '', summary: '', category: '', score: null, ...data };
     shop.score = normScore(shop.score);
     db.shops.push(shop);
-    save(db);
+    save(db, true);
     return shop;
   },
   updateShop(id, patch) {
@@ -397,19 +418,19 @@ export const store = {
     if (!s) return null;
     Object.assign(s, patch);
     s.score = normScore(s.score);
-    save(db);
+    save(db, false);
     return s;
   },
   removeShop(id) {
     db.shops = db.shops.filter(s => s.id !== id);
     db.visits = db.visits.filter(v => v.shopId !== id);
-    save(db);
+    save(db, true);
   },
 
   /** 重置回示例数据 */
   reset() {
     db = structuredClone(SEED);
-    save(db);
+    save(db, true);
   },
 };
 

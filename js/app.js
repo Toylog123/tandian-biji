@@ -32,6 +32,10 @@ function syncLabel() {
   if (!cloudConfigured) return '仅本机';
   if (!store.shared) return '没连云端';
   if (syncState === 'locked') return 'token 无效';
+  /* pending = 改动还在这台手机上排队，准备上传。
+     这两种必须分开，不然绿灯「已同步」会把用户骗了——
+     另一台手机这时候还看不到他刚记的东西。 */
+  if (syncState === 'pending') return '待上传…';
   if (syncState === 'ok') return '已同步';
   if (syncState === 'syncing') return '同步中…';
   return '云端没连上，先存本地';

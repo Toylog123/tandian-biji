@@ -192,6 +192,7 @@ input,select{font:inherit;color:inherit}
   background:rgba(0,0,0,.08);color:rgba(0,0,0,.6);font-weight:600;
 }
 .sync-chip[data-state="ok"]{background:#DFF3E4;color:#1f6b36}
+.sync-chip[data-state="pending"]{background:#FFF0B3;color:#8a6d00}
 .sync-chip[data-state="syncing"]{background:#FFF0B3;color:#8a6d00}
 .sync-chip[data-state="error"]{background:#FFE2E0;color:#a5302c}
 .thumb.ph{border:1.5px dashed #E2DACB}

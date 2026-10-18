@@ -50,7 +50,7 @@ const PUSH_DEBOUNCE = 9000 * 10;   // 90 秒
 
 /* ---------- 状态 ---------- */
 
-let status = 'local';        // local | syncing | ok | error | locked
+let status = 'local';        // local | pending | syncing | ok | error | locked
 const watchers = new Set();
 
 function setStatus(next) {
@@ -246,13 +246,22 @@ export function hasStalePending() {
 /**
  * 推一份上去，**立即返回不等网络**。
  * 内部是合并节流：90 秒内的所有改动只产生一次提交。
+ *
+ * immediate = true 用于「我记完了」这种明确的一次性动作（记一条、建一家、
+ * 删一条）—— 立刻传过去，不然用户切到另一台手机查看时那边还是旧的，
+ * 会以为没同步上。改店名那种连续输入才走防抖，不然每敲一个字都提交一次。
+ *
+ * 一定要把状态置成 pending：不然界面还停在「已同步」，
+ * 用户会以为另一台手机已经能看到新数据了，其实它还躺在内存队列里。
  */
-export function push(db) {
+export function push(db, immediate) {
   if (!isRemote()) return Promise.resolve(false);
   queued = db;
   markPending();
   clearTimeout(timer);
+  if (immediate) return flush();
   timer = setTimeout(flush, PUSH_DEBOUNCE);
+  setStatus('pending');
   return Promise.resolve(true);
 }
 
@@ -344,6 +353,7 @@ async function flush() {
     return true;
   } catch (e) {
     queued = queued || payload;      // 推失败就放回队列，下次再试；不要丢
+    markPending();                   // 标记留住，下次打开还会再推一次
     setStatus('error');
     console.warn('推送失败，已排队重试', e);
     return false;
