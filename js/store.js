@@ -1,14 +1,13 @@
 /**
  * 数据层 —— 默认存在浏览器的 localStorage
  *
- * 在 js/config.js 里填了 Supabase 之后，会额外同步一份到云端，
- * 这样两个人在各自手机上看到的是同一份数据。
+ * 在 js/config.js 里配好 GitHub 仓库、并且在管理页填了 token 之后，
+ * 会额外同步一份到云端，这样两台手机看到的是同一份数据。
  *
  * 没填的话这里就是个纯单机应用，跟以前完全一样。
  */
 
-import { SUPABASE } from './config.js';
-import * as backend from './backend.js';
+import * as cloud from './ghstore.js';
 
 const KEY = 'lulu_family_menu_v1';
 
@@ -50,26 +49,6 @@ export const TIERS = [
   { key: 'avoid', min: 0,   label: '别再去',   emoji: '⛔', cls: 't-avoid' },
 ];
 
-
-/**
- * 各平台的入口。
- *
- * 查证情况（2026-10）：
- * - 美团外卖 H5 是 https://waimai.meituan.com/ —— 标题「美团外卖，送啥都快」，
- *   能浏览能搜索。**注意**：网上到处流传的 https://www.meituan.com/waimai/ 是错的，
- *   实测直接返回 Not Found，别用那个。
- * - 饿了么 H5 https://h5.ele.me/ 能浏览和找店，但**不能下单结算**，
- *   所以饿了么主要靠 App 唤起，网页只是兜底看看。
- *
- * 两个 scheme 唤起效果没法在这里验证（需要真机 + 装了 App），失败会自动回退网页。
- * 用户手动填了店铺链接时一律用用户的，那条路最准。
- */
-export const PLATFORMS = {
-  '美团':   { app: 'imeituan://www.meituan.com/', web: 'https://waimai.meituan.com/' },
-  '饿了么': { app: 'eleme://',                   web: 'https://h5.ele.me/' },
-  '其他':   { app: '',                           web: '' },
-};
-
 /* ---------- 读写 ---------- */
 
 /**
@@ -104,6 +83,8 @@ function migrate(data) {
     if (!Array.isArray(v.images)) v.images = [];
     if (typeof v.text !== 'string') v.text = '';
     if (v.rating == null)      v.rating = 3;
+    // 人均价格：没记是 null。跟「0 元」必须分得开，否则排序时混在一起
+    v.price = normPrice(v.price);
   });
 
   // 菜品是后加 desc / rating / image 的，老数据里没有
@@ -119,6 +100,25 @@ function migrate(data) {
     if (typeof s.summary !== 'string') s.summary = '';
   });
   return data;
+}
+
+/**
+ * 人均价格归一化。
+ *
+ * 「没填」和「0 元」是两件事，必须分得开：
+ *   空输入是 undefined / null / '' / 纯空白 -> null（没记）
+ *   填了 0                              -> 0（真的是 0 元）
+ *
+ * 不能写成 `Number(x) > 0 ? ... : null` —— 那样 0 会被当成没填，
+ * 用户老老实实填的「人均 0」就被静默吞掉了。
+ * 注意空串要单独判：Number('') 是 0，不先拦掉就会把「没填」变成 0。
+ */
+function normPrice(x) {
+  if (x === null || x === undefined) return null;
+  if (typeof x === 'string' && x.trim() === '') return null;
+  const n = Number(x);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
 }
 
 /** 时间戳 -> 'YYYY-MM-DD'；时间戳是秒（老示例数据）就乘 1000 */
@@ -158,7 +158,7 @@ function save(db) {
     }
     throw e;
   }
-  if (backend.isRemote()) backend.push(db);
+  if (cloud.isRemote()) cloud.push(db);
   return db;
 }
 
@@ -168,16 +168,15 @@ let db = load();
 const changeHooks = new Set();
 function emit() { changeHooks.forEach(fn => { try { fn(); } catch { /* ignore */ } }); }
 
-// 没配后端就是空操作，配了就返回 true
-const REMOTE = backend.configure(SUPABASE);
+// config.js 里配了仓库地址没有？配了也不代表在同步，还得填 token。
+const CONFIGURED = cloud.isConfigured();
 
 /**
  * 键序无关的深比较。
  *
- * **不能直接 JSON.stringify 比字符串。** Postgres 的 jsonb 会把对象的键重排
- * （先按长度、再按字节），同一份内容从云端拉回来键序已经跟本地存的不一样了，
- * 直接比永远不相等——于是每次打开页面都会误判成「云端有更新」，
- * 白白重画一次，还把「真的没变」和「别人改了」两种情况混为一谈。
+ * 比内容而不是比字符串：任何一次序列化顺序的变化都会让
+ * JSON.stringify 的结果对不上，于是每次打开页面都误判成「云端有更新」，
+ * 白白重画一次，还把「真的没变」和「别人改了」混为一谈。
  */
 function stableEqual(a, b) {
   if (a === b) return true;
@@ -201,11 +200,11 @@ let syncing = false;
  * 2. 内容确实一致就什么都不做——避免每次切回前台都闪一下。
  */
 async function syncFromRemote() {
-  if (!REMOTE || syncing) return false;
-  if (backend.hasPending()) return false;       // 本地有改动没推完，先让推完
+  if (!CONFIGURED || !cloud.isRemote() || syncing) return false;
+  if (cloud.hasPending()) return false;         // 本地有改动没推完，先让推完
   syncing = true;
   try {
-    const remote = await backend.pull();
+    const remote = await cloud.pull();
     if (!remote) return false;                  // 远端还没数据，保留本地的
     if (stableEqual(remote, db)) return false;  // 真的没变，别白重画
     db = migrate(remote);
@@ -217,7 +216,7 @@ async function syncFromRemote() {
   }
 }
 
-if (REMOTE) {
+if (CONFIGURED) {
   syncFromRemote();
 
   /* 切回前台就拉一次。
@@ -234,12 +233,39 @@ if (REMOTE) {
   }, 30000);
 }
 
+/**
+ * 填/改 token。传空串 = 断开，只在这台设备上改。
+ *
+ * token 存在本机，**不进仓库**——仓库是公开的，写在里面等于没设防。
+ * 换设备要再填一次，这是有意的代价。
+ *
+ * 填对之后立刻拉一次：两个人都填好之后，第二个人填完马上就能看到
+ * 第一个人的记录，不用等 30 秒轮询。
+ */
+export function enableSync(token) {
+  const ok = cloud.setToken(token);
+  cloud.resetCache();          // token 可能指到另一份数据，别用旧的 sha
+  if (ok && cloud.isRemote()) syncFromRemote();
+  return ok && cloud.isRemote();
+}
+
+export function disconnectSync() {
+  cloud.setToken('');
+  cloud.resetCache();
+}
+
+/** 手动立刻同步一次（「立即同步」按钮） */
+export function syncNow() { return syncFromRemote(); }
+
+/** config.js 里配了仓库地址吗（跟「现在有没有在同步」是两回事） */
+export const cloudConfigured = CONFIGURED;
+
 /* ---------- 对外的操作接口 ---------- */
 
 export const store = {
   get db() { return db; },
-  /** 后端有没有配上。false = 纯单机，数据只在这台设备上 */
-  get shared() { return REMOTE; },
+  /** 现在是不是真的在同步。false = 纯单机，数据只在这台设备上 */
+  get shared() { return CONFIGURED && cloud.isRemote(); },
 
   /** 云端数据到了 / 同步状态变了，就回调一下，用来重画页面 */
   onChange(fn) {
@@ -249,26 +275,6 @@ export const store = {
 
   shops() { return db.shops.slice().sort((a, b) => a.createdAt - b.createdAt); },
   shop(id) { return db.shops.find(s => s.id === id); },
-
-  /**
-   * 这家店的下单入口。
-   * 优先用用户自己贴的店铺链接（最准，能直达那一家），
-   * 否则按平台给 App 唤起地址 + 网页兜底。
-   */
-  entryOf(shop) {
-    const p = PLATFORMS[shop.platform] || PLATFORMS['其他'];
-    if (shop.link) return { kind: 'custom', app: shop.link, web: shop.link };
-    return { kind: p.app ? 'platform' : 'none', app: p.app, web: p.web };
-  },
-
-  dishes(shopId) {
-    return db.dishes.filter(d => d.shopId === shopId && d.available !== false);
-  },
-  allDishes() { return db.dishes; },
-
-  /** 待下单的清单 */
-  pendingOrder() { return db.orders.find(o => o.status === 'pending'); },
-  orders() { return db.orders.slice().reverse(); },
 
   people() { return db.people; },
 
@@ -317,6 +323,7 @@ export const store = {
     };
     v.rating = Math.min(5, Math.max(1, Number(v.rating) || 3));
     if (!v.date) v.date = today();
+    v.price = normPrice(v.price);
     db.visits.push(v);
     save(db);
     return v;
@@ -335,16 +342,9 @@ export const store = {
     save(db);
   },
 
-  /** 某笔订单里还没写记录的店 */
-  unratedShops(order) {
-    if (!order) return [];
-    const shopIds = [...new Set(order.items.map(i => i.shopId))];
-    return shopIds.filter(sid => !db.visits.some(v => v.orderId === order.id && v.shopId === sid));
-  },
-
   /* 店铺增删改 */
   addShop(data) {
-    const shop = { id: uid('s'), createdAt: Date.now(), rating: 0, note: '', summary: '', platform: '美团', category: '', link: '', image: '', ...data };
+    const shop = { id: uid('s'), createdAt: Date.now(), rating: 0, note: '', summary: '', category: '', ...data };
     db.shops.push(shop);
     save(db);
     return shop;
@@ -358,128 +358,7 @@ export const store = {
   },
   removeShop(id) {
     db.shops = db.shops.filter(s => s.id !== id);
-    db.dishes = db.dishes.filter(d => d.shopId !== id);
     db.visits = db.visits.filter(v => v.shopId !== id);
-    save(db);
-  },
-
-  /* 菜品增删改 */
-  addDish(data) {
-    const dish = { id: uid('d'), available: true, tags: [], desc: '', rating: null, image: '', ...data };
-    dish.price = Number(dish.price) || 0;
-    db.dishes.push(dish);
-    save(db);
-    return dish;
-  },
-  updateDish(id, patch) {
-    const d = db.dishes.find(x => x.id === id);
-    if (!d) return null;
-    Object.assign(d, patch);
-    d.price = Number(d.price) || 0;
-    save(db);
-    return d;
-  },
-  removeDish(id) {
-    db.dishes = db.dishes.filter(d => d.id !== id);
-    save(db);
-  },
-
-  /**
-   * 给单个菜品打分。传 null / 0 表示清掉评分（回到「没吃过，不知道」）。
-   * 从店铺页点星星走这里，点第 n 颗就是 n 分，再点同一颗取消。
-   */
-  rateDish(id, rating) {
-    const d = db.dishes.find(x => x.id === id);
-    if (!d) return null;
-    d.rating = (rating === null || rating === d.rating) ? null : Number(rating);
-    save(db);
-    return d;
-  },
-
-  /**
-   * 给菜品设图 / 清图（传空字符串就是删掉）。
-   *
-   * 存不下时必须把内存里的值退回去——不然 db.image 已经是那张超大的图，
-   * 下次任何一次 save 都会重复失败，页面看着还正常但再也存不进去东西。
-   */
-  setDishImage(id, url) {
-    const d = db.dishes.find(x => x.id === id);
-    if (!d) return null;
-    const prev = d.image;
-    d.image = url || '';
-    try {
-      save(db);
-    } catch (e) {
-      d.image = prev;
-      throw e;
-    }
-    return d;
-  },
-
-  dish(id) { return db.dishes.find(d => d.id === id); },
-
-  /* 清单操作 */
-  addToOrder(dishId, qty, note, who) {
-    const d = db.dishes.find(x => x.id === dishId);
-    if (!d) return null;
-
-    let order = db.orders.find(o => o.status === 'pending');
-
-    if (!order) {
-      order = { id: uid('o'), createdAt: Date.now(), status: 'pending', items: [] };
-      db.orders.unshift(order);
-    }
-
-    const line = {
-      dishId: d.id,
-      shopId: d.shopId,
-      shopName: (this.shop(d.shopId) || {}).name || '未知店铺',
-      name: d.name,
-      // 清单是快照：当时有没有图、多少钱，都按加入那一刻记下来。
-      // 后来改了菜也不影响已经加进来的这一行。
-      image: d.image || '',
-      price: d.price,
-      qty: Math.max(1, qty | 0),
-      note: note || '',
-      who: who || '',
-    };
-
-    // 同一个人点同一道菜就合并，方便改数量
-    const same = order.items.find(i => i.dishId === line.dishId && i.note === line.note && i.who === line.who);
-    if (same) same.qty += line.qty;
-    else order.items.push(line);
-
-    save(db);
-    return order;
-  },
-
-  updateItem(orderId, index, patch) {
-    const o = db.orders.find(x => x.id === orderId);
-    if (!o || !o.items[index]) return;
-    if (patch.qty !== undefined) o.items[index].qty = Math.max(1, patch.qty | 0);
-    if (patch.note !== undefined) o.items[index].note = patch.note;
-    save(db);
-  },
-
-  removeItem(orderId, index) {
-    const o = db.orders.find(x => x.id === orderId);
-    if (!o) return;
-    o.items.splice(index, 1);
-    if (!o.items.length) db.orders = db.orders.filter(x => x.id !== orderId);
-    save(db);
-  },
-
-  /** 标记为「已下单」或「已搞定」 */
-  setOrderStatus(orderId, status) {
-    const o = db.orders.find(x => x.id === orderId);
-    if (!o) return;
-    o.status = status;
-    o.doneAt = Date.now();
-    save(db);
-  },
-
-  clearPending() {
-    db.orders = db.orders.filter(o => o.status !== 'pending');
     save(db);
   },
 
@@ -488,18 +367,10 @@ export const store = {
     db = structuredClone(SEED);
     save(db);
   },
-
-  total(order) {
-    return order.items.reduce((sum, i) => sum + i.price * i.qty, 0);
-  },
 };
 
 /* ---------- 工具 ---------- */
 
 function uid(prefix) {
   return prefix + '_' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
-}
-
-export function money(n) {
-  return '¥' + (Math.round(n * 100) / 100).toFixed(2).replace(/\.00$/, '');
 }

@@ -69,17 +69,6 @@ input,select{font:inherit;color:inherit}
   display:flex;align-items:center;gap:8px;
 }
 
-.card{background:var(--card);border-radius:var(--radius);box-shadow:var(--sh-1)}
-
-/* ---------- 顶部提示条 ---------- */
-.pending-strip{
-  display:flex;justify-content:space-between;align-items:center;gap:10px;width:calc(100% - 24px);
-  margin:14px 12px 2px;padding:13px 17px;border-radius:16px;
-  background:linear-gradient(150deg,#3A382F,var(--ink));color:#fff;
-  font-size:14px;font-weight:600;box-shadow:var(--sh-2);
-}
-.pending-total{color:var(--yellow);font-weight:700}
-
 /* ---------- Banner ---------- */
 .banner{
   position:relative;margin:16px 12px 6px;border-radius:22px;overflow:hidden;
@@ -118,8 +107,6 @@ input,select{font:inherit;color:inherit}
 .shop-meta{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--dim);margin-top:4px;flex-wrap:wrap}
 .shop-note{font-size:12px;color:var(--dim);margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .shop-go{font-size:22px;color:#C9C2B2;flex:none}
-.chip{padding:1px 7px;border-radius:6px;background:#F3EEE2;font-size:11px;color:#7a6a45}
-.chip-plat{background:var(--ink);color:var(--yellow)}
 .star{color:#E0A800}
 
 /* ---------- 菜品行 ---------- */
@@ -128,91 +115,19 @@ input,select{font:inherit;color:inherit}
   background:var(--yellow-wash);font-size:13px;color:#7a6100;
   border:1px solid rgba(255,209,0,.3);
 }
-.dish-row{
-  display:flex;align-items:center;gap:12px;padding:12px 4px;
-  border-bottom:1px solid var(--line);
-}
-.dish-row:last-child{border-bottom:0}
-
-/* 菜只认照片，不再退回 emoji 图标。没照片就是一块中性占位。 */
-.dish-thumb{
-  width:64px;height:64px;flex:none;border-radius:14px;
-  object-fit:cover;background:#EFE9DC;display:block;
-}
 .dish-thumb.ph{border:1.5px dashed #E2DACB}
-.dish-thumb.sm{width:38px;height:38px;border-radius:11px}
-.dish-main{flex:1;min-width:0}
-.dish-name{font-weight:600;font-size:15px;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
-.dish-name .dish-price{margin-left:auto}
-.dish-rate{margin-top:5px}
-.dish-desc{
-  font-size:12.5px;color:#9A7B3E;background:var(--yellow-wash);
-  padding:6px 10px;border-radius:9px;margin-top:7px;line-height:1.5;
-  /* 用 block 而不是 inline-block：inline-block 会让背景框只包住文字本身，
-     窄列里一换行就断成两截，看着像两块补丁。 */
-  display:block;
-}
-.dish-price{color:var(--danger);font-weight:700;font-size:15px}
-
-/* 可点的星级条 */
-.star-bar{display:inline-flex;align-items:center;gap:1px;font-size:16px;line-height:1;user-select:none}
-.star-bar > span{color:#E3DDD0;cursor:pointer;padding:0 1px;transition:transform .1s}
 .star-bar > span.on{color:#F0B400}
-.star-bar > span:hover{transform:scale(1.2)}
-.star-none{font-size:11.5px;color:#C4BCAA;font-style:normal;margin-left:6px}
 .tag{font-size:10.5px;padding:1px 6px;border-radius:5px;background:var(--yellow-wash);color:#8a6d00;font-weight:600}
-.btn-add{
-  flex:none;background:linear-gradient(180deg,#FFDD4A,var(--yellow));color:#5c4a00;font-weight:700;
-  padding:9px 18px;border-radius:999px;font-size:14px;
-  box-shadow:0 3px 9px rgba(200,160,0,.3);
-  transition:transform .08s ease;
-}
-.btn-add:active{transform:scale(.94);background:var(--yellow-deep)}
-
-/* ---------- 订单清单 ---------- */
-.order-row{
-  display:flex;gap:11px;padding:13px 4px;align-items:flex-start;
-  border-bottom:1px solid var(--line);
-}
-.order-thumb{width:44px;height:44px;flex:none;border-radius:12px;object-fit:cover;background:#EFE9DC;display:block}
 .order-thumb.ph{border:1.5px dashed #E2DACB}
-.order-main{flex:1;min-width:0}
-.order-name{font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.who{font-size:10.5px;background:#E8F1FF;color:#2f6bb5;padding:1px 7px;border-radius:5px;font-weight:600}
-.order-note{font-size:12.5px;color:var(--danger);margin-top:3px}
-.note-edit{
-  margin-top:6px;width:100%;padding:7px 10px;border:1px dashed var(--line);
-  border-radius:9px;background:#fff;font-size:13px;outline:none;color:var(--dim);
-}
 .note-edit.has{border-style:solid;border-color:#F3C9C4;color:var(--danger);font-weight:600;background:#FFF7F5}
-.note-edit:focus{border-color:var(--yellow);border-style:solid;color:var(--ink)}
-.order-right{flex:none;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
-.money{font-weight:700;color:var(--danger);font-size:15px}
-.stepper{display:inline-flex;align-items:center;gap:2px;background:#F3EEE2;border-radius:999px;padding:2px}
-.stepper button{width:26px;height:26px;border-radius:50%;font-size:16px;font-weight:700;color:#7a6a45}
-.stepper button:active{background:#e5dcc8}
-.stepper span{min-width:26px;text-align:center;font-weight:700;font-size:14px}
-.stepper.big{width:100%;justify-content:space-between;padding:4px}
-.stepper.big button{width:40px;height:40px;font-size:20px}
-.stepper.big span{font-size:19px;min-width:40px}
 .link-del{color:var(--dim);font-size:12px;text-decoration:underline}
 .shop-sum{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--dim);padding:9px 4px 0;gap:10px}
-.row-btns{display:flex;gap:7px;flex:none}
 .link-btn{
   font-size:12.5px;color:#8a6d00;background:var(--yellow-wash);
   padding:6px 13px;border-radius:999px;font-weight:600;flex:none;cursor:pointer;
   transition:transform .08s ease;
 }
 .link-btn:active{transform:scale(.95);background:#FFEFAF}
-
-/* ---------- 去下单 ---------- */
-.btn-order{
-  flex:none;background:linear-gradient(150deg,#3A382F,var(--ink));color:var(--yellow);font-weight:700;
-  padding:9px 16px;border-radius:999px;font-size:13px;white-space:nowrap;
-  box-shadow:0 3px 10px rgba(60,55,35,.28);
-  transition:transform .08s ease;
-}
-.btn-order:active{transform:scale(.95);opacity:.9}
 
 /* ---------- 评价 ---------- */
 .avg-chip{background:var(--yellow);color:#5c4a00;padding:2px 9px;border-radius:7px;font-size:12px}
@@ -241,14 +156,6 @@ input,select{font:inherit;color:inherit}
   font-family:inherit;
 }
 .field textarea:focus{border-color:var(--yellow)}
-
-.total-bar{
-  position:sticky;bottom:78px;display:flex;align-items:center;justify-content:space-between;gap:12px;
-  margin:18px 12px 8px;padding:15px 18px;border-radius:var(--radius);
-  background:linear-gradient(150deg,#3A382F,var(--ink));color:#fff;
-  box-shadow:var(--sh-3);
-}
-.total-num{font-size:25px;font-weight:800;color:var(--yellow);line-height:1.1}
 .btn-primary{
   background:linear-gradient(180deg,#FFDD4A,var(--yellow));
   color:#4a3d00;font-weight:700;
@@ -272,23 +179,14 @@ input,select{font:inherit;color:inherit}
 }
 .mng-row.on{border-color:var(--yellow);box-shadow:var(--sh-2)}
 .mng-row.col{flex-direction:column;align-items:stretch;gap:7px}
-.mng-top{display:flex;align-items:center;gap:9px}
 .mng-top .line-edit{flex:1}
-.desc-edit{resize:vertical;line-height:1.5;font-size:13px;min-height:44px}
 .mng-pick{flex:1;display:flex;flex-direction:column;gap:2px;text-align:left}
-.mng-body{flex:1;min-width:0}
-.mng-sub{display:flex;align-items:center;gap:7px;margin-top:5px}
 .line-edit{
   width:100%;padding:6px 9px;border:1px solid var(--line);border-radius:8px;
   background:#FCFAF5;outline:none;font-size:13.5px;
 }
 .line-edit:focus{border-color:var(--yellow);background:#fff}
-.w-price{width:74px}
-.w-plat{width:92px;flex:none}
-.grow{flex:1;min-width:0}
 .chk{display:flex;align-items:center;gap:3px;font-size:12px;color:var(--dim);white-space:nowrap}
-.link-edit{border-style:dashed}
-.tip{font-size:12px;color:var(--dim);margin:10px 2px 0}
 
 /* ---------- 同步状态 ---------- */
 .sync-chip{
@@ -298,24 +196,7 @@ input,select{font:inherit;color:inherit}
 .sync-chip[data-state="ok"]{background:#DFF3E4;color:#1f6b36}
 .sync-chip[data-state="syncing"]{background:#FFF0B3;color:#8a6d00}
 .sync-chip[data-state="error"]{background:#FFE2E0;color:#a5302c}
-
-/* ---------- 图片槽（管理页 / 录菜弹层共用） ---------- */
-.img-slot{display:flex;align-items:center;gap:5px;flex:none}
-.thumb{
-  width:46px;height:46px;border-radius:12px;flex:none;
-  background:#EFE9DC center/cover no-repeat;display:block;
-}
 .thumb.ph{border:1.5px dashed #E2DACB}
-.img-btn{
-  width:24px;height:24px;border-radius:8px;flex:none;font-size:12px;line-height:1;
-  background:var(--ink);color:var(--yellow);cursor:pointer;
-  display:flex;align-items:center;justify-content:center;
-}
-/* 顶上一条 button{cursor:pointer} 只管 button，label 当按钮用要自己补 */
-.img-btn.clear{background:var(--danger);color:#fff}
-.img-slot.big{gap:9px}
-.img-slot.big .thumb{width:74px;height:74px;border-radius:14px}
-.img-slot.big [hidden]{display:none}
 
 /* ---------- 轻提示 ---------- */
 .toast{
@@ -339,11 +220,6 @@ input,select{font:inherit;color:inherit}
 .empty h2{margin:0 0 7px;font-size:17.5px}
 .empty p{margin:0 0 20px;color:var(--dim);font-size:13.5px}
 .empty .btn-primary{box-shadow:0 4px 14px rgba(200,160,0,.32)}
-
-.hist-row{
-  display:flex;justify-content:space-between;align-items:center;gap:10px;
-  padding:12px 14px;background:var(--card);border-radius:14px;margin-bottom:9px;box-shadow:var(--sh-1);
-}
 
 /* ---------- 底部导航 ---------- */
 .tabbar{
@@ -370,12 +246,6 @@ input,select{font:inherit;color:inherit}
 }
 /* 选中项给个黄色胶囊，比单纯变色更容易一眼看出停在哪 */
 .tabbar a.on .ti{background:var(--yellow-wash);box-shadow:inset 0 0 0 1.5px rgba(255,209,0,.55)}
-.badge{
-  position:absolute;top:-5px;left:13px;background:var(--danger);color:#fff;
-  font-size:10px;font-style:normal;min-width:16px;height:16px;border-radius:999px;
-  display:none;align-items:center;justify-content:center;padding:0 4px;font-weight:700;
-}
-.badge:not(:empty){display:flex}
 
 /* ---------- 弹层 ---------- */
 .sheet-mask{
@@ -398,11 +268,6 @@ input,select{font:inherit;color:inherit}
   background:#fff;outline:none;font-size:15px;
 }
 .field input:focus,.field select:focus{border-color:var(--yellow)}
-.who-pick{display:flex;gap:8px}
-.who-opt{
-  padding:8px 18px;border-radius:999px;background:#fff;
-  border:1.5px solid var(--line);font-size:14px;
-}
 .who-opt.on{background:var(--yellow);border-color:var(--yellow);font-weight:700;color:#4a3d00}
 .sheet .btn-primary{width:100%;padding:14px;font-size:16px}
 .sheet .btn-ghost{width:100%;border:0;background:none;margin-top:6px}
@@ -411,7 +276,6 @@ input,select{font:inherit;color:inherit}
 @keyframes up{from{transform:translateY(100%)}}
 
 @media (max-width:520px){
-  .total-bar{bottom:76px}
 }
 
 /* ============================================================
@@ -465,9 +329,9 @@ input,select{font:inherit;color:inherit}
 .shop-card.t-avoid .shop-name{color:#A93A3D}
 
 /* 分组标题 */
-.grp-avoid .block-title{color:var(--t-avoid)}
-.grp-love  .block-title{color:var(--t-love)}
-.grp-ok    .block-title{color:var(--t-ok)}
+.grp-t-avoid .block-title{color:var(--t-avoid)}
+.grp-t-love  .block-title{color:var(--t-love)}
+.grp-t-ok    .block-title{color:var(--t-ok)}
 .grp-none .block-title{color:var(--dim)}
 
 /* 一句话总结：这是他下次想起来这家店的唯一凭据，
@@ -482,6 +346,37 @@ input,select{font:inherit;color:inherit}
   min-height:60px;resize:vertical;line-height:1.6;font-family:inherit;
 }
 .block-title.spaced{margin-top:22px}
+
+/* ---------- 探店记录排序条 ---------- */
+.sort-bar{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  padding:2px 14px 10px;
+}
+.sort-bar .dim{font-size:12px;margin-right:2px}
+.sort-opt{
+  border:1px solid var(--line);background:#fff;color:var(--ink-2);
+  border-radius:999px;padding:4px 11px;font-size:12px;cursor:pointer;
+}
+.sort-opt.on{background:var(--brand);border-color:var(--brand);color:#4a3a00;font-weight:600}
+.sort-opt:active{transform:scale(.96)}
+
+/* ---------- 星级配图 ----------
+ * 该放照片的位置一律用真图。这里没图时给一块中性虚线占位，
+ * 绝不退回 emoji 图标：认错了表情比没有更糟。
+ */
+.rate-art{display:block;object-fit:contain}
+.rate-art-empty{
+  display:flex;align-items:center;justify-content:center;
+  border:1.5px dashed var(--line);border-radius:14px;
+  background:repeating-linear-gradient(45deg,transparent,transparent 5px,rgba(0,0,0,.014) 5px,rgba(0,0,0,.014) 10px);
+  color:var(--dim);font-weight:700;letter-spacing:.5px;
+}
+/* 顶替店卡片的 60px 头像。src 是 256px 的 GIF，3 倍屏也不虚 */
+.shop-mood{width:60px;height:60px;flex:none;border-radius:18px}
+.shop-mood.rate-art-empty{font-size:19px}
+/* 时间线上每条记录前面的小图 */
+.visit-mood{width:44px;height:44px;flex:none;border-radius:14px}
+.visit-mood.rate-art-empty{font-size:15px;border-radius:14px}
 
 /* ---------- 探店记录 ---------- */
 .visit{
